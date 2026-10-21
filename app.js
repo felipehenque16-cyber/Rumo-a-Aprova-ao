@@ -18,7 +18,31 @@ const peso = q => (q.t === 'gerais' ? 1 : 2);
 function blankState() { return { attempts: {}, sims: [], read: {}, sessions: [], agenda: [], metaHoras: 12 }; }
 let state = blankState();
 let dirty = false;
-function save() { dirty = true; if (typeof onSave === 'function') onSave(); }
+const LOCAL_PROGRESS_KEY = 'caderno-ss:progress:v1';
+let localSaveFailed = false;
+function persistLocalProgress() {
+  try {
+    const data = JSON.parse(exportCode()).data;
+    data.bankAnswers = typeof bankAnswers === 'undefined' ? {} : bankAnswers;
+    data.bankReveal = typeof bankReveal === 'undefined' ? {} : bankReveal;
+    data.exam = typeof exam !== 'undefined' && exam && !exam.finished ? Object.assign({}, exam, { paused: true }) : null;
+    localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify({ app: 'caderno-ss', version: 1, data }));
+    localSaveFailed = false;
+    return true;
+  } catch (e) {
+    if (!localSaveFailed && typeof toast === 'function') toast('Não foi possível salvar neste aparelho. Use “Exportar progresso” para guardar uma cópia.');
+    localSaveFailed = true;
+    return false;
+  }
+}
+function clearLocalProgress() {
+  try { localStorage.removeItem(LOCAL_PROGRESS_KEY); localSaveFailed = false; } catch (e) { localSaveFailed = true; }
+}
+function save() {
+  persistLocalProgress();
+  dirty = !!auth;
+  if (typeof onSave === 'function') onSave();
+}
 function exportCode() { return JSON.stringify({ app: 'caderno-ss', v: 3, at: Date.now(), data: { attempts: state.attempts, sims: state.sims, read: state.read, sessions: state.sessions, agenda: state.agenda, metaHoras: state.metaHoras } }); }
 function importCode(txt) {
   const obj = JSON.parse(txt);
@@ -306,7 +330,7 @@ function footerNote() {
     <a href="https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2023/lei/L14601.htm" target="_blank" rel="noopener">Bolsa Família</a>,
     <a href="https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm" target="_blank" rel="noopener">LGPD</a> e
     <a href="https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm" target="_blank" rel="noopener">LAI</a>.
-    ${typeof auth !== 'undefined' && auth ? `Progresso salvo automaticamente na conta de ${esc(auth.user.nome)}.` : 'Sem login, o progresso fica disponível só enquanto a página estiver aberta. <a href="javascript:void(0)" data-action="open-login">Entre ou crie uma conta</a> para salvá-lo, ou use <a href="#/desempenho">Exportar progresso</a>.'}
+    ${typeof auth !== 'undefined' && auth ? `Progresso salvo neste aparelho e sincronizado com a conta de ${esc(auth.user.nome)}.` : 'Seu progresso é salvo automaticamente neste aparelho. Entre para sincronizá-lo com outros dispositivos, ou use <a href="#/desempenho">Exportar progresso</a> para guardar uma cópia.'}
   </div>`;
 }
 
@@ -788,6 +812,50 @@ function updateConfigSummary() {
 let exam = null;
 let timerId = null;
 
+function restoreLocalProgress() {
+  try {
+    const raw = localStorage.getItem(LOCAL_PROGRESS_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    const data = saved && saved.app === 'caderno-ss' && saved.data;
+    if (!data || !data.attempts) return false;
+    importCode(JSON.stringify({ data }));
+
+    const validAnswers = source => Object.fromEntries(Object.entries(source || {}).filter(([qid, answer]) =>
+      !!QMAP[qid] && Number.isInteger(Number(answer)) && Number(answer) >= 0 && Number(answer) < LETTERS.length
+    ).map(([qid, answer]) => [qid, Number(answer)]));
+    bankAnswers = validAnswers(data.bankAnswers);
+    bankReveal = Object.fromEntries(Object.entries(data.bankReveal || {}).filter(([qid, revealed]) =>
+      !!QMAP[qid] && bankAnswers[qid] !== undefined && revealed === true
+    ));
+
+    const candidate = data.exam;
+    if (candidate && Array.isArray(candidate.qs) && candidate.qs.length && candidate.qs.every(qid => !!QMAP[qid]) &&
+        candidate.answers && Number.isFinite(candidate.total) && Number.isFinite(candidate.remaining)) {
+      const validPositions = (source, predicate) => Object.fromEntries(Object.entries(source || {}).filter(([key, value]) =>
+        Number.isInteger(Number(key)) && Number(key) >= 0 && Number(key) < candidate.qs.length && predicate(value)
+      ).map(([key, value]) => [Number(key), value]));
+      exam = {
+        id: String(candidate.id || ('s' + Date.now())), qs: candidate.qs,
+        answers: validPositions(candidate.answers, value => Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) < LETTERS.length),
+        flags: validPositions(candidate.flags, value => typeof value === 'boolean'),
+        checked: validPositions(candidate.checked, value => typeof value === 'boolean'),
+        idx: Math.min(candidate.qs.length - 1, Math.max(0, Math.floor(Number(candidate.idx) || 0))),
+        mode: candidate.mode === 'treino' ? 'treino' : 'prova', preset: String(candidate.preset || 'livre'),
+        total: Math.max(1, Number(candidate.total)), remaining: Math.max(0, Math.min(Number(candidate.remaining), Number(candidate.total))),
+        paused: true, finished: false
+      };
+      runTimer();
+      if (parseRoute()[0] !== 'simulado' || parseRoute()[1] !== 'prova') location.hash = '#/simulado/prova';
+    } else exam = null;
+
+    dirty = false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function pickQuestions(pool, n, prior) {
   if (prior === 'mix') return shuffle(pool).slice(0, n);
   const score = q => { const a = state.attempts[q.id]; if (prior === 'new') return a ? 1 : 0; return a && a.last === false ? 0 : a ? 2 : 1; };
@@ -799,6 +867,7 @@ function pickQuestions(pool, n, prior) {
 function startExam(qids, opts) {
   const total = opts.tempoAuto ? qids.length * SEC_PER_Q : opts.minutos * 60;
   exam = { id: 's' + Date.now(), qs: qids, answers: {}, flags: {}, idx: 0, mode: opts.mode, preset: opts.preset || 'livre', total, remaining: total, paused: false, finished: false, checked: {} };
+  persistLocalProgress();
   cuts = {};
   runTimer();
   location.hash = '#/simulado/prova';
@@ -811,6 +880,7 @@ function runTimer() {
     if (!exam || exam.finished || exam.paused) return;
     exam.remaining -= 1;
     updateTimerEl();
+    if (exam.remaining % 5 === 0) persistLocalProgress();
     if (exam.remaining <= 0) { exam.remaining = 0; finishExam(true); }
   }, 1000);
 }
@@ -1417,12 +1487,12 @@ document.addEventListener('click', async ev => {
       if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else if (parseRoute()[0] === 'topico') rerenderKeepScroll(); else { replaceCard(q); qzSumRefresh(); }
       renderNav(parseRoute()); break;
     }
-    case 'bank-reveal': { const q = QMAP[el.dataset.q]; bankReveal[q.id] = true; if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else if (parseRoute()[0] === 'topico') rerenderKeepScroll(); else { replaceCard(q); qzSumRefresh(); } renderNav(parseRoute()); break; }
-    case 'bank-reveal-all': { let k = 0; QS.forEach(q => { if (q.t === el.dataset.t && isPending(q.id)) { bankReveal[q.id] = true; k++; } }); rerenderKeepScroll(); toast(k + (k === 1 ? ' questão corrigida.' : ' questões corrigidas.')); break; }
-    case 'qz-reveal-all': { const list = qzList(); let k = 0; list.forEach(q => { if (bankAnswers[q.id] !== undefined && !bankReveal[q.id]) { bankReveal[q.id] = true; k++; } }); qzRefresh(); renderNav(parseRoute()); toast(k + (k === 1 ? ' questão corrigida.' : ' questões corrigidas.')); break; }
+    case 'bank-reveal': { const q = QMAP[el.dataset.q]; bankReveal[q.id] = true; persistLocalProgress(); if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else if (parseRoute()[0] === 'topico') rerenderKeepScroll(); else { replaceCard(q); qzSumRefresh(); } renderNav(parseRoute()); break; }
+    case 'bank-reveal-all': { let k = 0; QS.forEach(q => { if (q.t === el.dataset.t && isPending(q.id)) { bankReveal[q.id] = true; k++; } }); persistLocalProgress(); rerenderKeepScroll(); toast(k + (k === 1 ? ' questão corrigida.' : ' questões corrigidas.')); break; }
+    case 'qz-reveal-all': { const list = qzList(); let k = 0; list.forEach(q => { if (bankAnswers[q.id] !== undefined && !bankReveal[q.id]) { bankReveal[q.id] = true; k++; } }); persistLocalProgress(); qzRefresh(); renderNav(parseRoute()); toast(k + (k === 1 ? ' questão corrigida.' : ' questões corrigidas.')); break; }
     case 'qz-more': { qzShown += QZ_STEP; const y = window.scrollY; qzRefresh(); window.scrollTo(0, y); break;
     }
-    case 'bank-retry': { delete bankAnswers[el.dataset.q]; delete bankReveal[el.dataset.q]; delete cuts[el.dataset.q]; if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else { replaceCard(QMAP[el.dataset.q]); qzSumRefresh(); } break; }
+    case 'bank-retry': { delete bankAnswers[el.dataset.q]; delete bankReveal[el.dataset.q]; delete cuts[el.dataset.q]; persistLocalProgress(); if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else { replaceCard(QMAP[el.dataset.q]); qzSumRefresh(); } break; }
     case 'qz-modo': qzOpt.modo = el.dataset.v; qzResetPos(); rerenderKeepScroll(); break;
     case 'qz-ordem': qzOpt.ordem = el.dataset.v; if (el.dataset.v === 'aleatoria') qzShuffle(); qzResetPos(); rerenderKeepScroll(); if (el.dataset.v === 'aleatoria') toast('Questões embaralhadas.'); break;
     case 'qz-toggle': qzOpen = !qzOpen; rerenderKeepScroll(); break;
@@ -1441,21 +1511,21 @@ document.addEventListener('click', async ev => {
       const pool = poolFromCfg(); if (!pool.length) break;
       startExam(pickQuestions(pool, Math.min(cfg.n, pool.length), cfg.prior).map(q => q.id), cfg); break;
     }
-    case 'exam-answer': { const i = +el.dataset.i; if (isCut(el.dataset.q, i)) toggleCut(el.dataset.q, i); else exam.answers[exam.idx] = i; router(); break; }
-    case 'clear-answer': { delete exam.answers[exam.idx]; router(); break; }
-    case 'check': { exam.checked[exam.idx] = true; router(); break; }
-    case 'flag': { exam.flags[exam.idx] = !exam.flags[exam.idx]; router(); break; }
-    case 'prev': exam.idx = Math.max(0, exam.idx - 1); router(); break;
-    case 'next': exam.idx = Math.min(exam.qs.length - 1, exam.idx + 1); router(); break;
-    case 'jump': exam.idx = +el.dataset.i; router(); break;
-    case 'pause': exam.paused = !exam.paused; router(); break;
+    case 'exam-answer': { const i = +el.dataset.i; if (isCut(el.dataset.q, i)) toggleCut(el.dataset.q, i); else exam.answers[exam.idx] = i; persistLocalProgress(); router(); break; }
+    case 'clear-answer': { delete exam.answers[exam.idx]; persistLocalProgress(); router(); break; }
+    case 'check': { exam.checked[exam.idx] = true; persistLocalProgress(); router(); break; }
+    case 'flag': { exam.flags[exam.idx] = !exam.flags[exam.idx]; persistLocalProgress(); router(); break; }
+    case 'prev': exam.idx = Math.max(0, exam.idx - 1); persistLocalProgress(); router(); break;
+    case 'next': exam.idx = Math.min(exam.qs.length - 1, exam.idx + 1); persistLocalProgress(); router(); break;
+    case 'jump': exam.idx = +el.dataset.i; persistLocalProgress(); router(); break;
+    case 'pause': exam.paused = !exam.paused; persistLocalProgress(); router(); break;
     case 'finish': finishExam(false); break;
-    case 'abort': { const ok = await modal({ title: 'Desistir do simulado?', body: 'As respostas não serão registradas nas estatísticas.', confirm: 'Desistir', danger: true }); if (ok) { exam = null; clearInterval(timerId); location.hash = '#/simulado'; } break; }
+    case 'abort': { const ok = await modal({ title: 'Desistir do simulado?', body: 'As respostas não serão registradas nas estatísticas.', confirm: 'Desistir', danger: true }); if (ok) { exam = null; clearInterval(timerId); persistLocalProgress(); location.hash = '#/simulado'; } break; }
     case 'redo-wrong': { const s = state.sims.find(x => x.id === el.dataset.id); const ids = s.qs.filter((qid, i) => s.answers[i] !== QMAP[qid].c); startExam(shuffle(ids), { tempoAuto: true, mode: 'treino' }); break; }
     case 'sim-errors': { const ids = QS.filter(q => state.attempts[q.id] && state.attempts[q.id].last === false).map(q => q.id); startExam(shuffle(ids), { tempoAuto: true, mode: 'treino' }); break; }
     case 'export': openExport(); break;
     case 'import': openImport(); break;
-    case 'reset': { const ok = await modal({ title: 'Zerar todos os dados?', body: 'Serão apagadas todas as respostas, simulados, marcações de leitura, sessões de estudo e o cronograma. Esta ação não pode ser desfeita.', confirm: 'Zerar dados', danger: true }); if (ok) { state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; clearInterval(timerId); clearInterval(swInt); sw = null; agEdit = null; dirty = false; router(); toast('Dados zerados.'); } break; }
+    case 'reset': { const ok = await modal({ title: 'Zerar todos os dados?', body: 'Serão apagadas todas as respostas, simulados, marcações de leitura, sessões de estudo e o cronograma. Esta ação não pode ser desfeita.', confirm: 'Zerar dados', danger: true }); if (ok) { state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; clearLocalProgress(); clearInterval(timerId); clearInterval(swInt); sw = null; agEdit = null; dirty = false; router(); toast('Dados zerados.'); } break; }
   }
 });
 
@@ -1500,7 +1570,7 @@ function openImport() {
     const rd = new FileReader(); rd.onload = () => { root.querySelector('#imp-code').value = rd.result; }; rd.readAsText(f);
   });
   root.querySelector('#imp-go').addEventListener('click', () => {
-    try { importCode(root.querySelector('#imp-code').value.trim()); root.innerHTML = ''; bankAnswers = {}; bankReveal = {}; router(); toast('Progresso importado.'); }
+    try { importCode(root.querySelector('#imp-code').value.trim()); root.innerHTML = ''; bankAnswers = {}; bankReveal = {}; exam = null; clearInterval(timerId); persistLocalProgress(); router(); toast('Progresso importado.'); }
     catch (e) { root.querySelector('#imp-err').textContent = 'Código inválido. Verifique se copiou o texto completo.'; }
   });
 }
@@ -1550,12 +1620,12 @@ document.addEventListener('keydown', ev => {
   if (!exam || exam.finished || parseRoute()[1] !== 'prova' || exam.paused) return;
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) || $('#modal-root').children.length) return;
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  if (ev.key === 'ArrowRight' && exam.idx < exam.qs.length - 1) { exam.idx++; router(); }
-  else if (ev.key === 'ArrowLeft' && exam.idx > 0) { exam.idx--; router(); }
+  if (ev.key === 'ArrowRight' && exam.idx < exam.qs.length - 1) { exam.idx++; persistLocalProgress(); router(); }
+  else if (ev.key === 'ArrowLeft' && exam.idx > 0) { exam.idx--; persistLocalProgress(); router(); }
   else {
     if (exam.mode === 'treino' && exam.checked[exam.idx]) return;
     const i = 'abcd'.indexOf(ev.key.toLowerCase());
-    if (i >= 0 && ev.key.length === 1) { const qid = exam.qs[exam.idx]; if (isCut(qid, i)) toggleCut(qid, i); else exam.answers[exam.idx] = i; router(); }
+    if (i >= 0 && ev.key.length === 1) { const qid = exam.qs[exam.idx]; if (isCut(qid, i)) toggleCut(qid, i); else exam.answers[exam.idx] = i; persistLocalProgress(); router(); }
   }
 });
 
@@ -1573,7 +1643,7 @@ $('#scrim').addEventListener('click', closeMenu);
 window.addEventListener('hashchange', router);
 /* ================= Contas ================= */
 /* Caderno SS — contas: login por e-mail e senha e sincronização do progresso com o servidor.
-   A sessão fica só na memória da página; ao reabrir o site, a pessoa entra novamente e o progresso é restaurado da conta. */
+   O token de acesso fica só na memória da página; o progresso também tem uma cópia local no aparelho. */
 
 const API = (() => {
   const raw = window.__API_BASE__ || '';
@@ -1783,6 +1853,7 @@ async function afterLogin(r, novo) {
   if (merged) { try { importCode(JSON.stringify({ data: merged })); } catch (e) {} }
   bankAnswers = {}; bankReveal = {};
   auth = { token: r.token, user: r.user, syncedAt: r.updated_at ? r.updated_at * 1000 : null, syncing: false, error: null };
+  persistLocalProgress();
   router.first = true; router(); paintAcct();
   if (local || !r.data) await syncNow();
   toast(novo ? 'Conta criada. Seu progresso será salvo automaticamente.' : (r.data ? 'Bem-vindo de volta, ' + r.user.nome.split(' ')[0] + '. Progresso carregado.' : 'Você entrou na sua conta.'));
@@ -1802,7 +1873,7 @@ function openAcct() {
       <tr><td class="k">Simulados</td><td class="tnum">${state.sims.length}</td></tr>
       <tr><td class="k">Sessões de estudo</td><td class="tnum">${state.sessions.length}</td></tr>
     </tbody></table>
-    <p class="xs muted">O progresso é salvo automaticamente a cada alteração. Por segurança, ao reabrir o site você precisa entrar de novo.</p>
+    <p class="xs muted">O progresso fica salvo neste aparelho e sincroniza com sua conta. Em outro aparelho, entre com esta conta para recuperar os dados.</p>
     <div class="btn-row" style="justify-content:flex-end">
       <button class="btn" id="acct-sync">Salvar agora</button>
       <button class="btn btn-danger-ghost" id="acct-out">Sair</button>
@@ -1813,7 +1884,7 @@ function openAcct() {
     await syncNow();
     const tok = auth && auth.token;
     try { if (tok) await api('/api/logout', { method: 'POST', token: tok }); } catch (e) {}
-    auth = null; state = blankState(); bankAnswers = {}; bankReveal = {}; dirty = false;
+    auth = null; state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; clearInterval(timerId); clearLocalProgress(); dirty = false;
     root.innerHTML = ''; router.first = true; router(); paintAcct(); toast('Você saiu da conta. O progresso continua salvo nela.');
   });
 }
@@ -1828,7 +1899,10 @@ document.addEventListener('click', ev => {
 
 window.addEventListener('beforeunload', ev => { if (typeof auth !== 'undefined' && auth) { flushSync(); if (!sw) return; } if (sw || (dirty && (Object.keys(state.attempts).length || state.sims.length || state.sessions.length || state.agenda.length))) { ev.preventDefault(); ev.returnValue = ''; } });
 setInterval(() => { renderMast(); icons(); }, 60000);
+const restoredLocalProgress = restoreLocalProgress();
 setTheme(document.documentElement.getAttribute('data-theme'));
 paintAcct();
 router();
+if (restoredLocalProgress) toast('Progresso recuperado deste aparelho.');
 })();
+
