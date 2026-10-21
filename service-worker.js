@@ -1,15 +1,15 @@
-const CACHE_NAME = 'caderno-ss-shell-v1';
+const CACHE_NAME = 'caderno-ss-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css',
-  './js/app.js',
-  './js/data-edital.js',
-  './js/data-topics.js',
-  './js/data-questions.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+  './style.css',
+  './app.js',
+  './data-edital.js',
+  './data-topics.js',
+  './data-questions.js',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', event => {
