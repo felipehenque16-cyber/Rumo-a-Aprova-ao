@@ -51,6 +51,34 @@
   <script src="./data-topics.js"></script>
   <script src="./data-questions.js"></script>
   <script>window.__API_BASE__ = '__PORT_8000__'; window.__GOOGLE_CLIENT_ID__ = '656171013442-6hma95orsv2vdp63c5ie7dg7n63hqjtd.apps.googleusercontent.com';</script>
+  <script>
+    // Diagnóstico de tela vazia: mostra o erro real em vez de deixar o usuário sem informação.
+    (function () {
+      function showStartupError(message, source, line) {
+        var root = document.getElementById('content');
+        if (!root) return;
+        var detail = [message || 'Erro desconhecido', source ? ('Arquivo: ' + source) : '', line ? ('Linha: ' + line) : ''].filter(Boolean).join('\n');
+        root.innerHTML = '<section style="max-width:760px;margin:32px auto;padding:24px;border:1px solid #d6dae0;border-radius:8px;background:var(--color-surface,#fff);color:var(--color-text,#1a1e24);font:16px/1.5 system-ui,sans-serif"><h1 style="font-size:22px;margin:0 0 12px">O aplicativo não conseguiu iniciar</h1><p>O conteúdo continua preservado. Esta mensagem ajuda a identificar o erro técnico.</p><pre id="startup-error-detail" style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:var(--color-surface-2,#f8f9fa);border-radius:6px"></pre><button onclick="location.reload()" style="margin-top:12px;padding:10px 16px;cursor:pointer">Tentar novamente</button></section>';
+        var pre = document.getElementById('startup-error-detail');
+        if (pre) pre.textContent = detail;
+      }
+      window.addEventListener('error', function (event) {
+        if (event && (event.message || event.error)) showStartupError(event.message || String(event.error), event.filename, event.lineno);
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && event.reason;
+        showStartupError('Promise rejeitada: ' + (reason && reason.message ? reason.message : String(reason)));
+      });
+      window.addEventListener('load', function () {
+        window.setTimeout(function () {
+          var root = document.getElementById('content');
+          if (root && !root.textContent.trim() && !root.querySelector('*')) {
+            showStartupError('A página carregou, mas o aplicativo não preencheu a área principal. Verifique se app.js e os arquivos data-*.js foram carregados.');
+          }
+        }, 5000);
+      });
+    })();
+  </script>
   <script src="./app.js?v=20261021-fix1"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
