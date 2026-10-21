@@ -546,6 +546,7 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 .auth-err { margin: 0; min-height: 1.2em; font-size: var(--text-sm); color: var(--color-error); }
 .google-auth-wrap { display: grid; justify-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); }
 .google-auth-btn { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: 100%; max-width: 360px; min-height: 42px; padding: 0 16px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-text); font-size: var(--text-sm); font-weight: 600; }
+.google-auth-btn[hidden] { display: none; }
 .google-auth-btn:hover { background: var(--color-surface-2); }
 .google-auth-btn svg { width: 18px; height: 18px; flex: 0 0 18px; }
 .auth-divider { display: flex; align-items: center; width: 100%; gap: var(--space-3); color: var(--color-text-faint); font-size: var(--text-xs); }
