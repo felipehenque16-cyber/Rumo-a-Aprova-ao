@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 34226)
+Total output lines: 1901
+
 (function () {
 'use strict';
 
@@ -857,245 +860,7 @@ function restoreLocalProgress() {
 }
 
 function pickQuestions(pool, n, prior) {
-  if (prior === 'mix') return shuffle(pool).slice(0, n);
-  const score = q => { const a = state.attempts[q.id]; if (prior === 'new') return a ? 1 : 0; return a && a.last === false ? 0 : a ? 2 : 1; };
-  const groups = {};
-  shuffle(pool).forEach(q => { const s = score(q); (groups[s] = groups[s] || []).push(q); });
-  return Object.keys(groups).sort().flatMap(k => groups[k]).slice(0, n);
-}
-
-function startExam(qids, opts) {
-  const total = opts.tempoAuto ? qids.length * SEC_PER_Q : opts.minutos * 60;
-  exam = { id: 's' + Date.now(), qs: qids, answers: {}, flags: {}, idx: 0, mode: opts.mode, preset: opts.preset || 'livre', total, remaining: total, paused: false, finished: false, checked: {} };
-  persistLocalProgress();
-  cuts = {};
-  runTimer();
-  location.hash = '#/simulado/prova';
-  if (parseRoute()[1] === 'prova') router();
-}
-
-function runTimer() {
-  clearInterval(timerId);
-  timerId = setInterval(() => {
-    if (!exam || exam.finished || exam.paused) return;
-    exam.remaining -= 1;
-    updateTimerEl();
-    if (exam.remaining % 5 === 0) persistLocalProgress();
-    if (exam.remaining <= 0) { exam.remaining = 0; finishExam(true); }
-  }, 1000);
-}
-
-function updateTimerEl() {
-  const el = $('#timer'); if (!el || !exam) return;
-  el.querySelector('span').textContent = fmtTime(exam.remaining);
-  el.classList.toggle('warn', exam.remaining <= 600 && exam.remaining > 120);
-  el.classList.toggle('danger', exam.remaining <= 120);
-}
-
-function viewExam() {
-  const e = exam;
-  const q = QMAP[e.qs[e.idx]];
-  const answered = Object.keys(e.answers).length;
-  const chosen = e.answers[e.idx];
-  const reveal = e.mode === 'treino' && e.checked[e.idx];
-  if (e.paused) return `${examBar(answered)}<div class="panel paused"><h2 class="h2">Simulado pausado</h2><p class="muted small">O cronômetro está parado e as questões ficam ocultas até você retomar.</p><button class="btn btn-primary" data-action="pause">Retomar</button></div>`;
-  return `
-  ${examBar(answered)}
-  <div class="exam">
-    <div>
-      <article class="q-card">
-        ${qMeta(q, e.idx + 1)}
-        ${stemHTML(q)}
-        ${optionsHTML(q, chosen, reveal, reveal ? 'noop' : 'exam-answer')}
-        ${reveal ? commentHTML(q, chosen) : ''}
-        <div class="q-actions">
-          <button class="btn btn-sm ${e.flags[e.idx] ? 'btn-primary' : ''}" data-action="flag">${e.flags[e.idx] ? 'Marcada para revisão' : 'Marcar para revisão'}</button>
-          ${chosen !== undefined && !reveal ? `<button class="btn btn-sm btn-ghost" data-action="clear-answer">Limpar resposta</button>` : ''}
-          ${e.mode === 'treino' && chosen !== undefined && !reveal ? `<button class="btn btn-sm btn-primary" data-action="check">Corrigir</button>` : ''}
-        </div>
-      </article>
-      <div class="exam-nav">
-        <button class="btn" data-action="prev" ${e.idx === 0 ? 'disabled' : ''}><i data-lucide="chevron-left"></i>Anterior</button>
-        ${e.idx < e.qs.length - 1 ? `<button class="btn btn-primary" data-action="next">Próxima<i data-lucide="chevron-right"></i></button>` : `<button class="btn btn-primary" data-action="finish">Entregar prova</button>`}
-      </div>
-    </div>
-    <aside class="panel">
-      <div class="panel-head"><h2>Cartão-resposta</h2><span class="xs tnum">${answered}/${e.qs.length}</span></div>
-      <div class="panel-body">
-        <div class="palette">${e.qs.map((qid, i) => {
-          let cls = '';
-          if (e.mode === 'treino' && e.checked[i]) cls = e.answers[i] === QMAP[qid].c ? 'correct' : 'wrong';
-          else if (e.answers[i] !== undefined) cls = 'answered';
-          return `<button class="pal ${cls} ${i === e.idx ? 'current' : ''} ${e.flags[i] ? 'flag' : ''}" data-action="jump" data-i="${i}" aria-label="Questão ${i + 1}${e.answers[i] !== undefined ? ', respondida ' + LETTERS[e.answers[i]] : ''}">${e.answers[i] !== undefined && e.mode === 'prova' ? LETTERS[e.answers[i]] : i + 1}</button>`;
-        }).join('')}</div>
-        <div class="legend">
-          <span><i style="background:var(--color-primary-soft);border-color:var(--color-primary)"></i>Respondida (mostra a letra)</span>
-          <span><i></i>Em branco</span>
-          <span><i style="background:var(--color-warning);border-color:var(--color-warning)"></i>Marcada para revisão</span>
-        </div>
-        <button class="btn" style="width:100%;margin-top:var(--space-4)" data-action="finish">Entregar prova</button>
-      </div>
-    </aside>
-  </div>`;
-}
-
-function examBar(answered) {
-  const e = exam;
-  return `<div class="exam-bar">
-    <div id="timer" class="timer" aria-live="off"><i data-lucide="clock"></i><span>${fmtTime(e.remaining)}</span></div>
-    <div class="exam-progress">${answered} de ${e.qs.length} respondidas · ${e.mode === 'prova' ? 'gabarito ao final' : 'correção imediata'}<div class="bar"><span style="width:${pct(answered, e.qs.length)}%"></span></div></div>
-    <div class="btn-row">
-      <button class="btn btn-sm" data-action="pause">${e.paused ? 'Retomar' : 'Pausar'}</button>
-      <button class="btn btn-sm btn-ghost" data-action="abort">Desistir</button>
-    </div>
-  </div>`;
-}
-
-async function finishExam(auto) {
-  const e = exam; if (!e || e.finished) return;
-  if (!auto) {
-    const blanks = e.qs.length - Object.keys(e.answers).length;
-    const flagged = Object.values(e.flags).filter(Boolean).length;
-    const ok = await modal({ title: 'Entregar a prova?', body: `${blanks ? `<b>${blanks}</b> ${blanks === 1 ? 'questão em branco' : 'questões em branco'}. ` : 'Todas as questões foram respondidas. '}${flagged ? `<b>${flagged}</b> marcada(s) para revisão. ` : ''}Depois da entrega, as respostas não podem ser alteradas.`, confirm: 'Entregar' });
-    if (!ok) return;
-  }
-  e.finished = true; clearInterval(timerId);
-  let acertos = 0, erros = 0, brancos = 0, pts = 0, ptsMax = 0, espOk = 0, espN = 0;
-  const por = {};
-  e.qs.forEach((qid, i) => {
-    const q = QMAP[qid]; const k = q.t + ':' + q.a; por[k] = por[k] || { ok: 0, n: 0 };
-    por[k].n++; ptsMax += peso(q);
-    if (q.t !== 'gerais') espN++;
-    const ans = e.answers[i];
-    if (ans === undefined) { brancos++; return; }
-    const ok = ans === q.c;
-    if (ok) { acertos++; por[k].ok++; pts += peso(q); if (q.t !== 'gerais') espOk++; } else erros++;
-    recordAttempt(qid, ok);
-  });
-  const rec = { id: e.id, date: Date.now(), n: e.qs.length, acertos, erros, brancos, pts, ptsMax, espOk, espN,
-    score: pct(acertos, e.qs.length), used: e.total - e.remaining, total: e.total, mode: e.mode, preset: e.preset, por, qs: e.qs, answers: e.answers, auto: !!auto };
-  state.sims.push(rec); save();
-  if (state.sims.length > 40) state.sims = state.sims.slice(-40);
-  exam = null;
-  if (auto) toast('Tempo esgotado: prova entregue automaticamente.');
-  location.hash = '#/simulado/resultado/' + rec.id;
-}
-
-/* ================= Resultado ================= */
-let resultFilter = 'all';
-function verdictHTML(s) {
-  if (!s.espN) return '';
-  const esp = Math.round((s.espOk / s.espN) * 20) * 2; // pontos projetados em 40
-  const need = Math.max(0, 30 - esp);
-  const minOk = esp >= 2;
-  let cls, msg;
-  if (!minOk) { cls = 'bad'; msg = `Projeção de ${esp} de 40 pontos em Conhecimentos Específicos: abaixo do mínimo de 2 pontos exigido pelo edital.`; }
-  else if (need === 0) { cls = 'ok'; msg = `Projeção de ${esp} de 40 pontos em Conhecimentos Específicos: só com eles você já alcançaria os 30 pontos exigidos (desde que faça ao menos 1 ponto em cada disciplina geral).`; }
-  else if (need <= 10) { cls = 'mid'; msg = `Projeção de ${esp} de 40 pontos em Conhecimentos Específicos: faltariam ${need} pontos nos conhecimentos gerais (de 20 possíveis) para chegar a 30.`; }
-  else if (need <= 20) { cls = 'low'; msg = `Projeção de ${esp} de 40 pontos em Conhecimentos Específicos: seriam necessários ${need} dos 20 pontos dos conhecimentos gerais, margem apertada.`; }
-  else { cls = 'bad'; msg = `Projeção de ${esp} de 40 pontos em Conhecimentos Específicos: mesmo acertando todos os conhecimentos gerais, não alcançaria os 30 pontos.`; }
-  return `<div class="proj proj-${cls}">${msg}</div>`;
-}
-
-function viewResult(id) {
-  const s = state.sims.find(x => x.id === id);
-  if (!s) return `<div class="panel empty"><h3>Resultado não encontrado</h3><p>Ele pode ter sido apagado ao zerar os dados.</p><a class="btn btn-primary" href="#/simulado">Novo simulado</a></div>`;
-  const keys = Object.keys(s.por);
-  const proj = s.espN && s.espN < s.n ? Math.round((s.espOk / s.espN) * 20) * 2 : null;
-  const items = s.qs.map((qid, i) => ({ q: QMAP[qid], i, ans: s.answers[i] })).filter(x => x.q && (resultFilter === 'all' || (resultFilter === 'wrong' && x.ans !== undefined && x.ans !== x.q.c) || (resultFilter === 'blank' && x.ans === undefined) || (resultFilter === 'right' && x.ans === x.q.c)));
-  const wrongIds = s.qs.filter((qid, i) => s.answers[i] !== QMAP[qid].c);
-  return `
-  <div class="page-head">
-    <div class="crumb"><a href="#/simulado">Simulador</a> · Resultado</div>
-    <h1 class="page-title">${s.auto ? 'Tempo esgotado — prova entregue' : 'Prova entregue'}</h1>
-    <p class="page-lead">${fmtDate(s.date)} · ${s.n} questões · ${s.mode === 'prova' ? 'gabarito ao final' : 'correção imediata'} · tempo usado ${fmtTime(s.used)} de ${fmtTime(s.total)} (${fmtTime(s.used / s.n)} por questão)</p>
-  </div>
-  <section class="panel">
-    <div class="panel-body score-block">
-      <div><div class="strip-label">Aproveitamento</div><div class="score-big ${lvl(s.score)}">${s.score}<small>%</small></div></div>
-      <div>
-        <table class="tbl"><tbody>
-          <tr><td class="k">Acertos / erros / em branco</td><td class="num"><span style="color:var(--color-success)">${s.acertos}</span> / <span style="color:var(--color-error)">${s.erros}</span> / ${s.brancos}</td></tr>
-          <tr><td class="k">Pontuação com os pesos do edital</td><td class="num">${fmtNum(s.pts)} de ${fmtNum(s.ptsMax)} pontos</td></tr>
-          ${proj !== null ? `<tr><td class="k">Projeção em Conhecimentos Específicos</td><td class="num">${proj} de 40 pontos</td></tr>` : ''}
-        </tbody></table>
-        ${verdictHTML(s)}
-        <p class="verdict muted">Referência do edital: aprovação com no mínimo 30 dos 60 pontos da prova objetiva, pelo menos 1 ponto em cada disciplina de conhecimentos gerais e 2 pontos em conhecimentos específicos. Conhecimentos específicos valem 2 pontos por questão; os gerais, 1 ponto.</p>
-      </div>
-    </div>
-  </section>
-  <section class="panel" style="margin-top:var(--space-5)">
-    <div class="panel-head"><h2>Desempenho por assunto</h2></div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Assunto</th><th class="bar-cell">Aproveitamento</th><th class="num">Acertos</th><th class="num">%</th></tr></thead><tbody>
-      ${keys.sort((a, b) => pct(s.por[a].ok, s.por[a].n) - pct(s.por[b].ok, s.por[b].n)).map(k => { const st = { n: s.por[k].n, p: pct(s.por[k].ok, s.por[k].n) }; const [t, a] = k.split(':');
-        return `<tr><td><a class="row-link" href="#/topico/${t}/resumo?s=${a}">${esc(ANAME[k])}</a><div class="xs muted">${TMAP[t].num} · ${esc(TMAP[t].title)}</div></td><td class="bar-cell mid">${barCell(st)}</td><td class="num">${s.por[k].ok}/${s.por[k].n}</td><td class="num">${pctCell(st)}</td></tr>`; }).join('')}
-    </tbody></table></div>
-  </section>
-  <div class="btn-row" style="margin:var(--space-5) 0">
-    ${wrongIds.length ? `<button class="btn btn-primary" data-action="redo-wrong" data-id="${s.id}">Refazer ${wrongIds.length} erradas e em branco</button>` : ''}
-    <a class="btn" href="#/simulado">Novo simulado</a>
-    <a class="btn" href="#/desempenho">Desempenho geral</a>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)">
-    <h2 class="h2" style="margin:0">Gabarito comentado</h2>
-    <div class="seg" data-seg-result="1">${[['all', 'Todas'], ['wrong', 'Erradas'], ['blank', 'Em branco'], ['right', 'Certas']].map(([v, l]) => `<button type="button" data-v="${v}" class="${resultFilter === v ? 'on' : ''}">${l}</button>`).join('')}</div>
-  </div>
-  <div class="q-list">${items.length ? items.map(x => `<article class="q-card">${qMeta(x.q, x.i + 1)}<p class="q-text">${esc(x.q.q)}</p>${optionsHTML(x.q, x.ans, true, 'noop')}${commentHTML(x.q, x.ans)}</article>`).join('') : '<div class="panel empty"><h3>Nada a exibir neste filtro</h3></div>'}</div>`;
-}
-
-/* ================= Desempenho ================= */
-function viewStats() {
-  const all = statsFor(() => true);
-  const sims = state.sims;
-  const best = sims.length ? Math.max(...sims.map(s => s.score)) : null;
-  const avgTime = sims.length ? sims.reduce((a, s) => a + s.used / s.n, 0) / sims.length : null;
-  return `
-  <div class="page-head">
-    <div class="crumb">Prática</div>
-    <h1 class="page-title">Desempenho</h1>
-    <p class="page-lead">Consolida as respostas do banco de questões e dos simulados, por tópico e por assunto do edital.</p>
-  </div>
-  <div class="strip">
-    <div><div class="strip-label">Aproveitamento geral</div><div class="strip-value">${all.n ? all.p + '%' : '—'}</div><div class="strip-sub">${all.ok} de ${all.n} tentativas</div></div>
-    <div><div class="strip-label">Cobertura do banco</div><div class="strip-value">${pct(all.seen, all.total)}%</div><div class="strip-sub">${all.seen} de ${all.total} questões</div></div>
-    <div><div class="strip-label">Melhor simulado</div><div class="strip-value">${best !== null ? best + '%' : '—'}</div><div class="strip-sub">${sims.length} realizado(s)</div></div>
-    <div><div class="strip-label">Tempo médio</div><div class="strip-value">${avgTime !== null ? fmtTime(avgTime) : '—'}</div><div class="strip-sub">por questão (meta: 4:30)</div></div>
-  </div>
-  <div class="cols-2" style="margin-bottom:var(--space-5)">
-    <section class="panel"><div class="panel-head"><h2>Evolução nos simulados</h2></div><div class="panel-body">
-      ${sims.length ? `<div class="chart-wrap"><canvas id="evo-chart" aria-label="Gráfico de evolução das notas"></canvas></div>` : `<div class="empty"><h3>Sem simulados</h3><p>Faça um simulado para acompanhar a evolução.</p><a class="btn btn-sm btn-primary" href="#/simulado">Ir para o simulador</a></div>`}
-    </div></section>
-    <section class="panel"><div class="panel-head"><h2>Acerto por tópico</h2></div><div class="panel-body">
-      ${all.n ? `<div class="chart-wrap"><canvas id="topic-chart" aria-label="Gráfico de acerto por tópico"></canvas></div>` : `<div class="empty"><h3>Sem respostas</h3><p>Resolva questões no banco ou em simulados.</p></div>`}
-    </div></section>
-  </div>
-  <section class="panel" style="margin-bottom:var(--space-5)"><div class="panel-head"><h2>Por tópico e assunto</h2></div>${assuntoTable(TOPICS, true)}</section>
-  <section class="panel" style="margin-bottom:var(--space-5)">
-    <div class="panel-head"><h2>Cópia do progresso</h2></div>
-    <div class="panel-body" style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);flex-wrap:wrap">
-      <p class="muted small" style="margin:0;max-width:62ch">O progresso fica disponível enquanto esta página estiver aberta. Exporte um código para continuar depois ou em outro dispositivo.</p>
-      <div class="btn-row"><button class="btn btn-primary" data-action="export">Exportar progresso</button><button class="btn" data-action="import">Importar</button></div>
-    </div>
-  </section>
-  <section class="panel">
-    <div class="panel-head"><h2>Histórico de simulados</h2><button class="btn btn-sm btn-ghost btn-danger" data-action="reset">Zerar todos os dados</button></div>
-    ${sims.length ? sims.slice().reverse().map(histItem).join('') : '<div class="empty-inline">Nenhum simulado registrado.</div>'}
-  </section>`;
-}
-
-function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-function drawChart() {
-  if (!window.Chart) return;
-  const text = cssVar('--color-text-muted'), grid = cssVar('--color-divider'), prim = cssVar('--color-primary');
-  Chart.defaults.font.family = "'IBM Plex Sans', sans-serif"; Chart.defaults.font.size = 12; Chart.defaults.color = text;
-  let c1 = null, c2 = null;
-  const evo = $('#evo-chart');
-  if (evo) {
-    const sims = state.sims.slice(-15);
-    c1 = new Chart(evo, {
-      type: 'line',
-      data: { labels: sims.map((s, i) => '#' + (state.sims.length - sims.length + i + 1)), datasets: [{ label: 'Aproveitamento (%)', data: sims.map(s => s.score), borderColor: prim, backgroundColor: prim, borderWidth: 2, tension: 0, pointRadius: 3 }] },
-      options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.parsed.y}% · ${sims[c.dataIndex].n} questões` } } }, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%', stepSize: 25 }, grid: { color: grid } }, x: { grid: { display: false } } } }
+  if (prior === 'mix') return shuffle(pool).s…4226 tokens truncated… x: { grid: { display: false } } } }
     });
   }
   const tc = $('#topic-chart');
@@ -1754,19 +1519,16 @@ if (installButton) {
 
 /* ----- Diálogo de login / cadastro ----- */
 function setupGoogleSignIn(root) {
-  const fallback = root.querySelector('#google-fallback');
   const mount = root.querySelector('#google-signin');
   const clientId = String(window.__GOOGLE_CLIENT_ID__ || '').trim();
-  if (!fallback || !mount) return;
-
-  fallback.addEventListener('click', () => {
+  if (!mount) return;
+  if (!clientId || !window.google?.accounts?.id) {
     const err = root.querySelector('#auth-err');
-    err.textContent = !clientId
+    if (err) err.textContent = !clientId
       ? 'O login Google ainda precisa ser configurado com o ID do cliente Google.'
       : 'O serviço Google não carregou. Verifique sua conexão e tente novamente.';
-  });
-
-  if (!clientId || !window.google?.accounts?.id) return;
+    return;
+  }
   try {
     window.google.accounts.id.initialize({
       client_id: clientId,
@@ -1791,10 +1553,10 @@ function setupGoogleSignIn(root) {
       theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'filled_black' : 'outline',
       width: Math.min(360, Math.max(240, root.querySelector('.dialog').clientWidth - 40))
     });
-    fallback.hidden = true;
     mount.hidden = false;
   } catch (error) {
-    // Mantém o botão de fallback visível para informar o estado da configuração.
+    const err = root.querySelector('#auth-err');
+    if (err) err.textContent = 'Não foi possível carregar o login do Google.';
   }
 }
 
@@ -1807,10 +1569,6 @@ function openLogin(mode = 'entrar', msg = '') {
     </div>
     <p class="muted small" style="margin:var(--space-3) 0 var(--space-4)">${cad ? 'Crie uma conta para salvar respostas, simulados, cronograma e tempo de estudo e continuar de onde parou em qualquer aparelho.' : 'Entre para carregar o progresso salvo na sua conta.'}</p>
     <div class="google-auth-wrap">
-      <button class="google-auth-btn" id="google-fallback" type="button">
-        <svg aria-hidden="true" viewBox="0 0 48 48"><path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44z"/><path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 18z"/><path fill="#EA4335" d="M24 12.1c3 0 5.7 1 7.8 3.1l5.8-5.8C34.1 6.1 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.2 11.4-8.2z"/></svg>
-        <span>Continuar com Google</span>
-      </button>
       <div id="google-signin" hidden></div>
       <div class="auth-divider"><span>ou use seu e-mail</span></div>
     </div>
