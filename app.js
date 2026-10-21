@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 34226)
-Total output lines: 1901
-
 (function () {
 'use strict';
 
