@@ -46,11 +46,11 @@
 
   <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./supabase-config.js"></script>
   <script src="./data-edital.js"></script>
   <script src="./data-topics.js"></script>
   <script src="./data-questions.js"></script>
-  <script>window.__API_BASE__ = '__PORT_8000__'; window.__GOOGLE_CLIENT_ID__ = '656171013442-60qn19nv9hj4h8rhf8dq0d4pi22vvpnj.apps.googleusercontent.com';</script>
   <script>
     // Diagnóstico de tela vazia: mostra o erro real em vez de deixar o usuário sem informação.
     (function () {
@@ -79,7 +79,7 @@
       });
     })();
   </script>
-  <script src="./app.js?v=20261022-login-gate"></script>
+  <script src="./app.js?v=20261022-supabase"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
