@@ -1724,8 +1724,10 @@ async function afterLogin(session, novo = false) {
     clearInterval(timerId); dirty = false;
   }
   const local = hasLocalProgress() && (!localProgressOwnerId || sameLocalAccount) ? progressData() : null;
+  const googleIdentity = (user.identities || []).find(identity => identity.provider === 'google');
+  const identityData = googleIdentity && googleIdentity.identity_data || {};
   auth = {
-    user: { id: user.id, nome: metadata.nome || metadata.full_name || metadata.name || user.email || 'Estudante', email: user.email || '' },
+    user: { id: user.id, nome: metadata.nome || metadata.full_name || metadata.name || user.email || 'Estudante', email: user.email || '', foto: metadata.avatar_url || metadata.picture || identityData.avatar_url || identityData.picture || null },
     syncedAt: null, syncing: false, error: null
   };
   let remote = null;
@@ -1747,24 +1749,52 @@ async function afterLogin(session, novo = false) {
   toast(novo ? 'Conta criada e progresso sincronizado.' : 'Conta conectada. Progresso carregado.');
 }
 
+function showEntryGateIfNeeded() {
+  let entryDismissed = false;
+  try { entryDismissed = sessionStorage.getItem('caderno-ss:entry-dismissed:v1') === '1'; } catch (e) {}
+  if (!entryDismissed && !auth) openLogin('entrar', '', true);
+}
 async function initializeSupabaseSession() {
-  if (!supabaseClient) return;
-  const { data, error } = await supabaseClient.auth.getSession();
-  if (error) { console.warn('Não foi possível restaurar a sessão Supabase:', error.message); return; }
-  if (data.session) {
-    try { await afterLogin(data.session, false); }
-    catch (e) { toast('Sessão encontrada, mas não foi possível carregar a conta.'); }
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient.auth.getSession();
+      if (error) throw error;
+      if (data.session) {
+        try { await afterLogin(data.session, false); }
+        catch (e) { toast('Sessão encontrada, mas não foi possível carregar a conta.'); }
+      }
+    } catch (e) {
+      console.warn('Não foi possível restaurar a sessão Supabase:', e.message);
+    }
   }
+  authSessionLoading = false;
+  paintAcct();
+  showEntryGateIfNeeded();
 }
 
 /* ----- Cabeçalho ----- */
 const initials = n => n.trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase();
+function avatarMarkup(user, large = false) {
+  let photo = '';
+  try { const url = new URL(user.foto || ''); if (url.protocol === 'https:') photo = esc(url.href); } catch (e) {}
+  const content = photo ? `<img src="${photo}" alt="" referrerpolicy="no-referrer">` : esc(initials(user.nome));
+  return `<span class="mh-avatar${large ? ' lg' : ''}">${content}</span>`;
+}
+function bindAvatarFallback(root, user) {
+  root.querySelectorAll('.mh-avatar img').forEach(img => {
+    const fallback = () => { const avatar = img.closest('.mh-avatar'); if (avatar) avatar.textContent = initials(user.nome); };
+    img.addEventListener('error', fallback, { once: true });
+    if (img.complete && !img.naturalWidth) fallback();
+  });
+}
+let authSessionLoading = true;
 function paintAcct() {
   const el = document.getElementById('mh-acct'); if (!el) return;
-  if (!auth) { el.innerHTML = `<button class="mh-login" data-action="open-login" type="button"><i data-lucide="log-in"></i><span>Entrar</span></button>`; icons(); return; }
+  if (!auth) { if (authSessionLoading) { el.innerHTML = ''; return; } el.innerHTML = `<button class="mh-login" data-action="open-login" type="button"><i data-lucide="log-in"></i><span>Entrar</span></button>`; icons(); return; }
   const st = auth.syncing ? 'Salvando…' : auth.error ? 'Não salvo' : 'Salvo';
   el.innerHTML = `<button class="mh-user" data-action="open-acct" type="button" aria-haspopup="dialog" title="${esc(auth.user.nome)} · ${st}">
-    <span class="mh-avatar">${esc(initials(auth.user.nome))}</span><span class="mh-uname">${esc(auth.user.nome.split(' ')[0])}</span><span class="mh-dot ${auth.syncing ? 'busy' : auth.error ? 'err' : 'ok'}" aria-label="${st}"></span></button>`;
+    ${avatarMarkup(auth.user)}<span class="mh-uname">${esc(auth.user.nome.split(' ')[0])}</span><span class="mh-dot ${auth.syncing ? 'busy' : auth.error ? 'err' : 'ok'}" aria-label="${st}"></span></button>`;
+  bindAvatarFallback(el, auth.user);
 }
 
 /* ----- Instalação como app (PWA) ----- */
@@ -1893,7 +1923,7 @@ function openAcct() {
   const all = statsFor(() => true);
   const root = dialogShell('Minha conta', `
     <div class="acct-card">
-      <span class="mh-avatar lg">${esc(initials(auth.user.nome))}</span>
+      ${avatarMarkup(auth.user, true)}
       <div><b>${esc(auth.user.nome)}</b><div class="small muted">${esc(auth.user.email)}</div></div>
     </div>
     <table class="tbl" style="margin:var(--space-4) 0"><tbody>
@@ -1908,6 +1938,7 @@ function openAcct() {
       <button class="btn btn-danger-ghost" id="acct-out">Sair</button>
       <button class="btn btn-primary" data-close="1">Fechar</button>
     </div>`);
+  bindAvatarFallback(root, auth.user);
   root.querySelector('#acct-sync').addEventListener('click', async () => { await syncNow(); root.innerHTML = ''; toast(auth && !auth.error ? 'Progresso salvo.' : 'Não foi possível salvar agora.'); });
   root.querySelector('#acct-out').addEventListener('click', async () => {
     await syncNow();
@@ -1932,9 +1963,6 @@ setTheme(document.documentElement.getAttribute('data-theme'));
 paintAcct();
 router();
 if (restoredLocalProgress) toast('Progresso recuperado deste aparelho.');
-let entryDismissed = false;
-try { entryDismissed = sessionStorage.getItem('caderno-ss:entry-dismissed:v1') === '1'; } catch (e) {}
-if (!entryDismissed && !auth) openLogin('entrar', '', true);
 void initializeSupabaseSession();
 })();
 
