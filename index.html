@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Aprovaí">
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./aprovai-logo.svg">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <title>Aprovaí — Assistente Social Educacional · Concurso PMCG 2026</title>
   <meta name="description" content="Material de estudo para o cargo de Assistente Social Educacional da Prefeitura de Campina Grande/PB (Edital 01/2026, IDECAN): resumos por item do edital, questões comentadas no formato da prova e simulador cronometrado.">
@@ -25,7 +26,7 @@
   <header class="masthead">
     <button class="mh-btn" id="menu-btn" aria-label="Abrir menu" type="button"><i data-lucide="menu"></i></button>
     <a class="mh-brand" href="#/">
-      <span class="mh-logo" aria-hidden="true">A</span>
+      <span class="mh-logo" aria-hidden="true"><img src="./aprovai-logo.svg" alt=""></span>
       <span class="mh-title">Aprovaí<span class="mh-sub">Assistente Social Educacional · PMCG 2026</span></span>
     </a>
     <a class="mh-sw" id="mh-sw" href="#/estudo" title="Cronômetro de estudo em andamento" hidden></a>
@@ -79,7 +80,7 @@
       });
     })();
   </script>
-  <script src="./app.js?v=20261022-aprovai"></script>
+  <script src="./app.js?v=20261022-aprovai-avatar"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
