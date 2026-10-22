@@ -1539,7 +1539,7 @@ function dialogShell(title, inner, options = {}) {
   root.classList.toggle('auth-gate', gate);
   root.innerHTML = `<div class="scrim show" style="z-index:90" ${gate ? '' : 'data-close="1"'}></div>
     <div role="dialog" aria-modal="true" aria-labelledby="auth-title" class="dialog${gate ? ' auth-gate-card' : ''}"${gate ? '' : ' style="width:min(560px,calc(100vw - 32px))"'}>
-      ${gate ? `<aside class="auth-gate-hero"><span class="auth-gate-mark" aria-hidden="true">A</span><div><span class="auth-gate-kicker">APROVAÍ · PMCG 2026</span><h2>Seu próximo passo começa aqui.</h2><p>Resumos, questões comentadas e simulados para organizar sua preparação.</p></div><span class="auth-gate-foot">ASSISTENTE SOCIAL EDUCACIONAL</span></aside><section class="auth-gate-main"><span class="auth-gate-mobile-mark">APROVAÍ</span><h3 id="auth-title">${title}</h3>${inner}</section>` : `<h3 id="auth-title">${title}</h3>${inner}`}
+      ${gate ? `<aside class="auth-gate-hero"><span class="auth-gate-mark" aria-hidden="true"><img src="./aprovai-logo.svg" alt=""></span><div><span class="auth-gate-kicker">APROVAÍ · PMCG 2026</span><h2>Seu próximo passo começa aqui.</h2><p>Resumos, questões comentadas e simulados para organizar sua preparação.</p></div><span class="auth-gate-foot">ASSISTENTE SOCIAL EDUCACIONAL</span></aside><section class="auth-gate-main"><span class="auth-gate-mobile-mark">APROVAÍ</span><h3 id="auth-title">${title}</h3>${inner}</section>` : `<h3 id="auth-title">${title}</h3>${inner}`}
     </div>`;
   root.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => { root.innerHTML = ''; }));
   return root;
