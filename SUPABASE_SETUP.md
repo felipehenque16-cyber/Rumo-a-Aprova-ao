@@ -1,4 +1,4 @@
-# Configurar contas e sincronização do Caderno SS
+# Configurar contas e sincronização do Aprovaí
 
 A aplicação é um site estático. O Supabase fornece autenticação e armazenamento do progresso; não é necessário criar ou presumir um backend próprio.
 
