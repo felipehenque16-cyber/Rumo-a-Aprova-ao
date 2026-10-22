@@ -1529,10 +1529,14 @@ document.addEventListener('click', async ev => {
   }
 });
 
-function dialogShell(title, inner) {
+function dialogShell(title, inner, options = {}) {
   const root = $('#modal-root');
-  root.innerHTML = `<div class="scrim show" style="z-index:90" data-close="1"></div>
-    <div role="dialog" aria-modal="true" class="dialog" style="width:min(560px,calc(100vw - 32px))"><h3>${title}</h3>${inner}</div>`;
+  const gate = options.gate === true;
+  root.classList.toggle('auth-gate', gate);
+  root.innerHTML = `<div class="scrim show" style="z-index:90" ${gate ? '' : 'data-close="1"'}></div>
+    <div role="dialog" aria-modal="true" aria-labelledby="auth-title" class="dialog${gate ? ' auth-gate-card' : ''}"${gate ? '' : ' style="width:min(560px,calc(100vw - 32px))"'}>
+      ${gate ? `<aside class="auth-gate-hero"><span class="auth-gate-mark" aria-hidden="true">SS</span><div><span class="auth-gate-kicker">CADERNO SS · PMCG 2026</span><h2>Seu próximo passo começa aqui.</h2><p>Resumos, questões comentadas e simulados para organizar sua preparação.</p></div><span class="auth-gate-foot">ASSISTENTE SOCIAL EDUCACIONAL</span></aside><section class="auth-gate-main"><span class="auth-gate-mobile-mark">CADERNO SS</span><h3 id="auth-title">${title}</h3>${inner}</section>` : `<h3 id="auth-title">${title}</h3>${inner}`}
+    </div>`;
   root.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => { root.innerHTML = ''; }));
   return root;
 }
@@ -1795,9 +1799,9 @@ function setupGoogleSignIn(root) {
   }
 }
 
-function openLogin(mode = 'entrar', msg = '') {
+function openLogin(mode = 'entrar', msg = '', gate = false) {
   const cad = mode === 'cadastro';
-  const root = dialogShell(cad ? 'Criar conta' : 'Entrar', `
+  const root = dialogShell(cad ? 'Criar sua conta' : 'Acesse sua conta', `
     <div class="seg auth-tabs" role="tablist">
       <button type="button" class="${cad ? '' : 'on'}" data-auth-tab="entrar" role="tab" aria-selected="${!cad}">Entrar</button>
       <button type="button" class="${cad ? 'on' : ''}" data-auth-tab="cadastro" role="tab" aria-selected="${cad}">Criar conta</button>
@@ -1815,11 +1819,17 @@ function openLogin(mode = 'entrar', msg = '') {
       <p class="auth-err" id="auth-err" role="alert">${esc(msg)}</p>
       ${hasLocalProgress() ? '<p class="xs muted" style="margin:0">O progresso feito nesta visita será somado ao da conta.</p>' : ''}
       <div class="btn-row" style="justify-content:flex-end">
-        <button type="button" class="btn" data-close="1">Cancelar</button>
+        ${gate ? '<button type="button" class="btn btn-ghost" data-guest-entry>Continuar como visitante</button>' : '<button type="button" class="btn" data-close="1">Cancelar</button>'}
         <button type="submit" class="btn btn-primary" id="auth-go">${cad ? 'Criar conta' : 'Entrar'}</button>
       </div>
-    </form>`);
-  root.querySelectorAll('[data-auth-tab]').forEach(b => b.addEventListener('click', () => openLogin(b.dataset.authTab)));
+    </form>`, { gate });
+  root.querySelectorAll('[data-auth-tab]').forEach(b => b.addEventListener('click', () => openLogin(b.dataset.authTab, '', gate)));
+  const guestEntry = root.querySelector('[data-guest-entry]');
+  if (guestEntry) guestEntry.addEventListener('click', () => {
+    try { sessionStorage.setItem('caderno-ss:entry-dismissed:v1', '1'); } catch (e) {}
+    root.innerHTML = '';
+    root.classList.remove('auth-gate');
+  });
   setupGoogleSignIn(root);
   const f = root.querySelector('#auth-form');
   f.addEventListener('input', () => { const e = root.querySelector('#auth-err'); if (e) e.textContent = ''; });
@@ -1897,5 +1907,8 @@ setTheme(document.documentElement.getAttribute('data-theme'));
 paintAcct();
 router();
 if (restoredLocalProgress) toast('Progresso recuperado deste aparelho.');
+let entryDismissed = false;
+try { entryDismissed = sessionStorage.getItem('caderno-ss:entry-dismissed:v1') === '1'; } catch (e) {}
+if (!entryDismissed && !auth) openLogin('entrar', '', true);
 })();
 
