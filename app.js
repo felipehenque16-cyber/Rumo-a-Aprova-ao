@@ -18,6 +18,7 @@ const peso = q => (q.t === 'gerais' ? 1 : 2);
 function blankState() { return { attempts: {}, sims: [], read: {}, sessions: [], agenda: [], metaHoras: 12 }; }
 let state = blankState();
 let dirty = false;
+let localProgressOwnerId = null;
 const LOCAL_PROGRESS_KEY = 'caderno-ss:progress:v1';
 let localSaveFailed = false;
 function persistLocalProgress() {
@@ -26,7 +27,9 @@ function persistLocalProgress() {
     data.bankAnswers = typeof bankAnswers === 'undefined' ? {} : bankAnswers;
     data.bankReveal = typeof bankReveal === 'undefined' ? {} : bankReveal;
     data.exam = typeof exam !== 'undefined' && exam && !exam.finished ? Object.assign({}, exam, { paused: true }) : null;
-    localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify({ app: 'caderno-ss', version: 1, data }));
+    const ownerId = typeof auth !== 'undefined' && auth ? auth.user.id : localProgressOwnerId;
+    localProgressOwnerId = ownerId || null;
+    localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify({ app: 'caderno-ss', version: 1, ownerId: localProgressOwnerId, data }));
     localSaveFailed = false;
     return true;
   } catch (e) {
@@ -36,7 +39,7 @@ function persistLocalProgress() {
   }
 }
 function clearLocalProgress() {
-  try { localStorage.removeItem(LOCAL_PROGRESS_KEY); localSaveFailed = false; } catch (e) { localSaveFailed = true; }
+  try { localStorage.removeItem(LOCAL_PROGRESS_KEY); localProgressOwnerId = null; localSaveFailed = false; } catch (e) { localSaveFailed = true; }
 }
 function save() {
   persistLocalProgress();
@@ -819,6 +822,7 @@ function restoreLocalProgress() {
     const saved = JSON.parse(raw);
     const data = saved && saved.app === 'caderno-ss' && saved.data;
     if (!data || !data.attempts) return false;
+    localProgressOwnerId = typeof saved.ownerId === 'string' ? saved.ownerId : null;
     importCode(JSON.stringify({ data }));
 
     const validAnswers = source => Object.fromEntries(Object.entries(source || {}).filter(([qid, answer]) =>
@@ -1645,43 +1649,36 @@ $('#menu-btn').addEventListener('click', () => { const open = !$('#sidebar').cla
 $('#scrim').addEventListener('click', closeMenu);
 
 window.addEventListener('hashchange', router);
-/* ================= Contas ================= */
-/* Caderno SS — contas: login por e-mail e senha e sincronização do progresso com o servidor.
-   O token de acesso fica só na memória da página; o progresso também tem uma cópia local no aparelho. */
+/* ================= Contas e sincronização Supabase ================= */
+let supabaseClient = null;
+try {
+  const supabaseUrl = String(window.__SUPABASE_URL__ || '').trim();
+  const supabaseKey = String(window.__SUPABASE_ANON_KEY__ || '').trim();
+  if (window.supabase && supabaseUrl && supabaseKey) {
+    supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+  }
+} catch (e) {}
 
-const API = (() => {
-  const raw = window.__API_BASE__ || '';
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
-  if (raw.startsWith('__PORT_')) return local ? 'http://localhost:8000' : null;
-  return raw.replace(/\/$/, '');
-})();
-
-let auth = null; // { token, user: { nome, email }, syncedAt, syncing, error }
+let auth = null; // { user: { id, nome, email }, syncedAt, syncing, error }
 let syncTimer = null;
 
-async function api(path, { method = 'GET', body, token } = {}) {
-  if (!API) throw new Error('Servidor de contas indisponível no momento.');
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = 'Bearer ' + token;
-  let res;
-  try { res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' }); }
-  catch (e) { throw new Error('Não foi possível conectar ao servidor. Verifique sua internet e tente de novo.'); }
-  let json = null; try { json = await res.json(); } catch (e) {}
-  if (!res.ok) { const err = new Error((json && json.detail) || 'Erro ao falar com o servidor.'); err.status = res.status; throw err; }
-  return json;
+function requireSupabase() {
+  if (!supabaseClient) throw new Error('Contas ainda não configuradas. Configure a URL e a chave pública do Supabase.');
 }
 
 function progressData() { return JSON.parse(exportCode()).data; }
 function hasLocalProgress() { return Object.keys(state.attempts).length || state.sims.length || Object.keys(state.read).length || state.sessions.length || state.agenda.length; }
 
 /* Junta o progresso da conta com o da sessão atual, sem perder nada. */
-function mergeData(a, b) {
+function mergeData(a, b, addAttemptCounts = true) {
   if (!a) return b; if (!b) return a;
   const attempts = Object.assign({}, a.attempts);
   Object.entries(b.attempts || {}).forEach(([k, v]) => {
     const x = attempts[k];
     if (!x) attempts[k] = v;
-    else attempts[k] = { n: x.n + v.n, ok: x.ok + v.ok, last: (v.ts || 0) >= (x.ts || 0) ? v.last : x.last, ts: Math.max(x.ts || 0, v.ts || 0) };
+    else attempts[k] = { n: addAttemptCounts ? x.n + v.n : Math.max(x.n, v.n), ok: addAttemptCounts ? x.ok + v.ok : Math.max(x.ok, v.ok), last: (v.ts || 0) >= (x.ts || 0) ? v.last : x.last, ts: Math.max(x.ts || 0, v.ts || 0) };
   });
   const byKey = (arr, key) => { const m = new Map(); arr.forEach(x => x && m.set(key(x), x)); return [...m.values()]; };
   return {
@@ -1694,24 +1691,70 @@ function mergeData(a, b) {
   };
 }
 
-function onSave() { if (!auth) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 1200); paintAcct(); }
+function onSave() { if (!auth) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 900); paintAcct(); }
 async function syncNow() {
-  if (!auth) return;
+  if (!auth || !supabaseClient) return;
   clearTimeout(syncTimer);
   auth.syncing = true; paintAcct();
   try {
-    const r = await api('/api/progress', { method: 'PUT', body: { data: progressData() }, token: auth.token });
-    auth.syncedAt = r.updated_at * 1000; auth.error = null; dirty = false;
+    const { error } = await supabaseClient.from('user_progress').upsert({
+      user_id: auth.user.id,
+      data: progressData(),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+    if (error) throw error;
+    auth.syncedAt = Date.now(); auth.error = null; dirty = false;
   } catch (e) {
-    auth.error = e.message;
-    if (e.status === 401) { auth = null; toast('Sua sessão expirou. Entre novamente para continuar salvando.'); router(); }
+    auth.error = e.message || 'Não foi possível sincronizar o progresso.';
   }
   if (auth) auth.syncing = false;
   paintAcct();
 }
 function flushSync() {
-  if (!auth || !API || (!dirty && !syncTimer)) return;
-  try { fetch(API + '/api/progress', { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.token }, body: JSON.stringify({ data: progressData() }) }); } catch (e) {}
+  if (auth && (dirty || syncTimer)) void syncNow();
+}
+
+async function afterLogin(session, novo = false) {
+  if (!session || !session.user) throw new Error('O Supabase não retornou uma sessão válida.');
+  const user = session.user;
+  const metadata = user.user_metadata || {};
+  const sameLocalAccount = localProgressOwnerId === user.id;
+  if (localProgressOwnerId && !sameLocalAccount) {
+    state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null;
+    clearInterval(timerId); dirty = false;
+  }
+  const local = hasLocalProgress() && (!localProgressOwnerId || sameLocalAccount) ? progressData() : null;
+  auth = {
+    user: { id: user.id, nome: metadata.nome || metadata.full_name || metadata.name || user.email || 'Estudante', email: user.email || '' },
+    syncedAt: null, syncing: false, error: null
+  };
+  let remote = null;
+  try {
+    const { data, error } = await supabaseClient.from('user_progress').select('data, updated_at').eq('user_id', user.id).maybeSingle();
+    if (error) throw error;
+    remote = data;
+    auth.syncedAt = data && data.updated_at ? new Date(data.updated_at).getTime() : null;
+  } catch (e) {
+    auth.error = 'Conta conectada, mas a tabela de progresso ainda precisa ser configurada no Supabase.';
+  }
+  const merged = mergeData(remote && remote.data, local, !sameLocalAccount);
+  if (merged) { try { importCode(JSON.stringify({ data: merged })); } catch (e) {} }
+  persistLocalProgress();
+  router.first = true; router(); paintAcct();
+  const gate = $('#modal-root');
+  gate.innerHTML = ''; gate.classList.remove('auth-gate');
+  if (!auth.error && (local || !remote)) await syncNow();
+  toast(novo ? 'Conta criada e progresso sincronizado.' : 'Conta conectada. Progresso carregado.');
+}
+
+async function initializeSupabaseSession() {
+  if (!supabaseClient) return;
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) { console.warn('Não foi possível restaurar a sessão Supabase:', error.message); return; }
+  if (data.session) {
+    try { await afterLogin(data.session, false); }
+    catch (e) { toast('Sessão encontrada, mas não foi possível carregar a conta.'); }
+  }
 }
 
 /* ----- Cabeçalho ----- */
@@ -1759,44 +1802,25 @@ if (installButton) {
 /* ----- Diálogo de login / cadastro ----- */
 function setupGoogleSignIn(root) {
   const mount = root.querySelector('#google-signin');
-  const clientId = String(window.__GOOGLE_CLIENT_ID__ || '').trim();
   if (!mount) return;
-  if (!clientId || !window.google?.accounts?.id) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'google-auth-btn'; button.textContent = 'Continuar com Google';
+  button.addEventListener('click', async () => {
     const err = root.querySelector('#auth-err');
-    if (err) err.textContent = !clientId
-      ? 'O login Google ainda precisa ser configurado com o ID do cliente Google.'
-      : 'O serviço Google não carregou. Verifique sua conexão e tente novamente.';
-    return;
-  }
-  try {
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async response => {
-        const err = root.querySelector('#auth-err');
-        const emailButton = root.querySelector('#auth-go');
-        if (!response.credential || !err) return;
-        err.textContent = '';
-        if (emailButton) emailButton.disabled = true;
-        try {
-          const result = await api('/api/auth/google', { method: 'POST', body: { credential: response.credential } });
-          await afterLogin(result, false);
-          root.innerHTML = '';
-        } catch (error) {
-          err.textContent = error.message || 'Não foi possível entrar com o Google.';
-          if (emailButton) emailButton.disabled = false;
-        }
-      }
-    });
-    window.google.accounts.id.renderButton(mount, {
-      type: 'standard', text: 'continue_with', shape: 'rectangular', size: 'large',
-      theme: document.documentElement.getAttribute('data-theme') === 'dark' ? 'filled_black' : 'outline',
-      width: Math.min(360, Math.max(240, root.querySelector('.dialog').clientWidth - 40))
-    });
-    mount.hidden = false;
-  } catch (error) {
-    const err = root.querySelector('#auth-err');
-    if (err) err.textContent = 'Não foi possível carregar o login do Google.';
-  }
+    try {
+      requireSupabase();
+      if (err) err.textContent = '';
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: location.origin + location.pathname + location.hash }
+      });
+      if (error) throw error;
+    } catch (e) {
+      if (err) err.textContent = e.message || 'Não foi possível iniciar o login Google.';
+    }
+  });
+  mount.replaceChildren(button);
+  mount.hidden = false;
 }
 
 function openLogin(mode = 'entrar', msg = '', gate = false) {
@@ -1843,23 +1867,22 @@ function openLogin(mode = 'entrar', msg = '', gate = false) {
     if (!v.senha || v.senha.length < 6) { err.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
     go.disabled = true; go.textContent = cad ? 'Criando…' : 'Entrando…'; err.textContent = '';
     try {
-      const r = await api(cad ? '/api/register' : '/api/login', { method: 'POST', body: cad ? { nome: v.nome, email: v.email, senha: v.senha } : { email: v.email, senha: v.senha } });
-      await afterLogin(r, cad);
-      root.innerHTML = '';
+      requireSupabase();
+      if (cad) {
+        const { data, error } = await supabaseClient.auth.signUp({ email: v.email, password: v.senha, options: { data: { nome: v.nome.trim() }, emailRedirectTo: location.origin + location.pathname } });
+        if (error) throw error;
+        if (data.session) await afterLogin(data.session, true);
+        else {
+          err.textContent = 'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.';
+          go.disabled = false; go.textContent = 'Criar conta';
+        }
+      } else {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email: v.email, password: v.senha });
+        if (error) throw error;
+        await afterLogin(data.session, false);
+      }
     } catch (e) { err.textContent = e.message; go.disabled = false; go.textContent = cad ? 'Criar conta' : 'Entrar'; }
   });
-}
-
-async function afterLogin(r, novo) {
-  const local = hasLocalProgress() ? progressData() : null;
-  const merged = mergeData(r.data, local);
-  if (merged) { try { importCode(JSON.stringify({ data: merged })); } catch (e) {} }
-  bankAnswers = {}; bankReveal = {};
-  auth = { token: r.token, user: r.user, syncedAt: r.updated_at ? r.updated_at * 1000 : null, syncing: false, error: null };
-  persistLocalProgress();
-  router.first = true; router(); paintAcct();
-  if (local || !r.data) await syncNow();
-  toast(novo ? 'Conta criada. Seu progresso será salvo automaticamente.' : (r.data ? 'Bem-vindo de volta, ' + r.user.nome.split(' ')[0] + '. Progresso carregado.' : 'Você entrou na sua conta.'));
 }
 
 function openAcct() {
@@ -1885,8 +1908,7 @@ function openAcct() {
   root.querySelector('#acct-sync').addEventListener('click', async () => { await syncNow(); root.innerHTML = ''; toast(auth && !auth.error ? 'Progresso salvo.' : 'Não foi possível salvar agora.'); });
   root.querySelector('#acct-out').addEventListener('click', async () => {
     await syncNow();
-    const tok = auth && auth.token;
-    try { if (tok) await api('/api/logout', { method: 'POST', token: tok }); } catch (e) {}
+    try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch (e) {}
     auth = null; state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; clearInterval(timerId); clearLocalProgress(); dirty = false;
     root.innerHTML = ''; router.first = true; router(); paintAcct(); toast('Você saiu da conta. O progresso continua salvo nela.');
   });
@@ -1910,5 +1932,6 @@ if (restoredLocalProgress) toast('Progresso recuperado deste aparelho.');
 let entryDismissed = false;
 try { entryDismissed = sessionStorage.getItem('caderno-ss:entry-dismissed:v1') === '1'; } catch (e) {}
 if (!entryDismissed && !auth) openLogin('entrar', '', true);
+void initializeSupabaseSession();
 })();
 
