@@ -129,7 +129,7 @@ function renderNav(route) {
     ${link('#/', 'Painel', r0 === '')}
     ${link('#/edital', 'Edital e prova', r0 === 'edital')}
     <div class="nav-label">Prática</div>
-    ${link('#/questoes', 'Resolver questões', r0 === 'questoes', `<span class="nav-prog">${QS.length}</span>`)}
+    ${link('#/questoes', 'Resolver questões', r0 === 'questoes')}
     ${link('#/simulado', 'Simulador de prova', r0 === 'simulado', exam && !exam.finished ? '<span class="nav-tag">em andamento</span>' : '')}
     ${link('#/desempenho', 'Desempenho', r0 === 'desempenho')}
     ${link('#/erros', 'Caderno de erros', r0 === 'erros', errCount() ? `<span class="nav-prog">${errCount()}</span>` : '')}
@@ -221,14 +221,14 @@ function viewHome() {
   <div class="page-head">
     <div class="crumb">Edital nº 01/2026 · Prefeitura Municipal de Campina Grande/PB · IDECAN</div>
     <h1 class="page-title">Assistente Social Educacional</h1>
-    <p class="page-lead">Conteúdo organizado pelos itens do edital, com ${QS.length} questões comentadas no formato da prova (quatro alternativas) e simulador cronometrado.</p>
+    <p class="page-lead">Conteúdo organizado pelos itens do edital, com questões comentadas no formato da prova (quatro alternativas) e simulador cronometrado.</p>
   </div>
 
   ${typeof auth !== 'undefined' && auth ? '' : `<div class="acct-banner"><div><b>Guarde seu progresso</b><span class="small muted">Com uma conta, suas respostas, simulados, cronograma e tempo de estudo ficam salvos e podem ser retomados em qualquer aparelho.</span></div><div class="btn-row"><button class="btn btn-primary btn-sm" data-action="open-login" data-mode="cadastro">Criar conta</button><button class="btn btn-sm" data-action="open-login">Entrar</button></div></div>`}
   <div class="strip">
     <div><div class="strip-label">Estudo nesta semana</div><div class="strip-value">${hm(studiedSince(weekStart()))}</div><div class="strip-sub">meta de ${state.metaHoras} h · ${d > 0 ? d : 0} dias até a prova</div></div>
     <div><div class="strip-label">Resumos lidos</div><div class="strip-value">${totalRead}<small> / ${totalSections}</small></div><div class="strip-sub">${pct(totalRead, totalSections)}% do conteúdo</div></div>
-    <div><div class="strip-label">Questões resolvidas</div><div class="strip-value">${all.seen}<small> / ${all.total}</small></div><div class="strip-sub">${all.n ? all.p + '% de acerto' : 'nenhuma ainda'} · <a href="#/questoes">resolver</a></div></div>
+    <div><div class="strip-label">Questões resolvidas</div><div class="strip-value">${all.seen}</div><div class="strip-sub">${all.n ? all.p + '% de acerto' : 'nenhuma ainda'} · <a href="#/questoes">resolver</a></div></div>
     <div><div class="strip-label">Simulados</div><div class="strip-value">${sims.length}</div><div class="strip-sub">${best !== null ? 'melhor: ' + best + '%' : 'nenhum realizado'}</div></div>
   </div>
 
