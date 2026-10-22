@@ -553,6 +553,40 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--color-divider); }
 .btn-danger-ghost { color: var(--color-error); }
 .btn-danger-ghost:hover { border-color: var(--color-error); }
+#modal-root.auth-gate { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 28px; background: radial-gradient(ellipse at 12% 8%, rgba(82,127,183,.16), transparent 38%), linear-gradient(135deg, #edf2f8, #f7f8fa 55%, #e6edf5); }
+#modal-root.auth-gate .scrim { display: none; }
+#modal-root.auth-gate .dialog.auth-gate-card { position: relative; left: auto; top: auto; transform: none; z-index: 1; width: min(960px, 100%); max-height: calc(100dvh - 56px); padding: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); border: 1px solid rgba(31,58,95,.12); border-radius: 22px; box-shadow: 0 24px 80px rgba(19,36,59,.2); }
+.auth-gate-hero { min-height: 610px; padding: clamp(30px, 5vw, 58px); color: #fff; background: linear-gradient(145deg, #142c49, #1f3a5f 58%, #315b83); display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
+.auth-gate-hero::after { content: ''; position: absolute; width: 340px; height: 340px; right: -180px; bottom: -135px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 36px rgba(255,255,255,.035), 0 0 0 74px rgba(255,255,255,.025); pointer-events: none; }
+.auth-gate-mark { display: grid; place-items: center; width: 52px; height: 52px; border: 1px solid rgba(255,255,255,.42); border-radius: 15px; font-family: var(--font-serif); font-size: 1.1rem; font-weight: 600; letter-spacing: .04em; }
+.auth-gate-hero > div { max-width: 340px; position: relative; z-index: 1; }
+.auth-gate-kicker, .auth-gate-foot { color: #c2d1e2; font-size: .68rem; font-weight: 700; letter-spacing: .12em; }
+.auth-gate-hero h2 { margin-top: 15px; font-family: var(--font-serif); font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 500; line-height: 1.1; }
+.auth-gate-hero p { margin: 16px 0 0; color: #d2deeb; font-size: .98rem; line-height: 1.75; }
+.auth-gate-foot { position: relative; z-index: 1; }
+.auth-gate-main { padding: clamp(28px, 4vw, 52px); overflow-y: auto; align-self: center; }
+.auth-gate-main h3 { margin-bottom: 18px; color: #1b2e45; font-size: 1.7rem; font-weight: 600; letter-spacing: -.025em; }
+.auth-gate-main .auth-tabs { margin-bottom: 18px; }
+.auth-gate-main .auth-tabs button { min-height: 42px; }
+.auth-gate-main .muted { line-height: 1.55; }
+.auth-gate-main .google-auth-wrap { margin: 18px 0; }
+.auth-gate-main .auth-form { gap: 12px; }
+.auth-gate-main .auth-form .input { min-height: 44px; border-radius: 8px; }
+.auth-gate-main .btn-row { align-items: center; gap: 10px; margin-top: 4px; }
+.auth-gate-main [data-guest-entry] { margin-right: auto; color: var(--color-text-muted); padding-inline: 8px; }
+.auth-gate-mobile-mark { display: none; }
+@media (max-width: 700px) {
+  #modal-root.auth-gate { padding: 12px; }
+  #modal-root.auth-gate .dialog.auth-gate-card { max-height: calc(100dvh - 24px); grid-template-columns: minmax(0,1fr); overflow-y: auto; border-radius: 16px; }
+  .auth-gate-hero { min-height: 0; padding: 19px 24px; flex-direction: row; align-items: center; gap: 16px; }
+  .auth-gate-mark { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px; }
+  .auth-gate-hero > div { max-width: none; }
+  .auth-gate-kicker, .auth-gate-foot, .auth-gate-hero p { display: none; }
+  .auth-gate-hero h2 { margin: 0; font-family: var(--font-body); font-size: 1.12rem; font-weight: 600; }
+  .auth-gate-main { padding: 24px; }
+  .auth-gate-mobile-mark { display: block; margin-bottom: 6px; color: var(--color-text-faint); font-size: .66rem; font-weight: 700; letter-spacing: .12em; }
+  .auth-gate-main h3 { margin-bottom: 14px; font-size: 1.45rem; }
+}
 @media (max-width: 640px) {
   .mh-uname { display: none; }
   .mh-user { padding: 0 4px; }
