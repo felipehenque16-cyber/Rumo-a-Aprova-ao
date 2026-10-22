@@ -1,4 +1,4 @@
-const CACHE_NAME = 'caderno-ss-shell-v12';
+const CACHE_NAME = 'caderno-ss-shell-v13';
 const APP_SHELL = [
   './',
   './index.html',
