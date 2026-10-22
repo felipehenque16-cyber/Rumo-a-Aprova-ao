@@ -1772,7 +1772,10 @@ let installPrompt = null;
 const installButton = document.getElementById('install-app');
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 if (installButton) {
-  installButton.hidden = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // Só oferecer o botão customizado quando o navegador puder abrir o prompt nativo.
+  // No iOS, a instalação é manual pelo menu Compartilhar do Safari.
+  installButton.hidden = isStandalone || !isIOS;
   window.addEventListener('beforeinstallprompt', event => {
     event.preventDefault();
     installPrompt = event;
@@ -1785,17 +1788,17 @@ if (installButton) {
   });
   installButton.addEventListener('click', async () => {
     if (installPrompt) {
-      installPrompt.prompt();
-      await installPrompt.userChoice;
+      const promptEvent = installPrompt;
       installPrompt = null;
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      if (choice.outcome === 'accepted') installButton.hidden = true;
       return;
     }
-    const howTo = isIOS
-      ? 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.'
-      : 'No menu do navegador, escolha “Instalar app” ou “Adicionar à tela inicial”. Se a opção não aparecer, abra este site em um endereço HTTPS.';
-    await modal({ title: 'Instalar Caderno SS', body: howTo, confirm: 'Entendi', cancel: '' });
+    if (isIOS) {
+      await modal({ title: 'Instalar Caderno SS', body: 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.', confirm: 'Entendi', cancel: '' });
+    }
   });
-  if (isIOS && !installButton.hidden) installButton.hidden = false;
   icons();
 }
 
