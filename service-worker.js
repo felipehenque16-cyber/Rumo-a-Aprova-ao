@@ -1,10 +1,11 @@
-const CACHE_NAME = 'caderno-ss-shell-v7';
+const CACHE_NAME = 'caderno-ss-shell-v8';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './style.css',
   './app.js',
+  './supabase-config.js',
   './data-edital.js',
   './data-topics.js',
   './data-questions.js',
