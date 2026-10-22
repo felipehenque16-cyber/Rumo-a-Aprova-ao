@@ -15,7 +15,7 @@ const SEC_PER_Q = 270; // 3 h para 40 questões = 4,5 min por questão
 const peso = q => (q.t === 'gerais' ? 1 : 2);
 
 /* ================= Estado (em memória, com exportação/importação) ================= */
-function blankState() { return { attempts: {}, sims: [], read: {}, sessions: [], agenda: [], metaHoras: 12 }; }
+function blankState() { return { attempts: {}, sims: [], read: {}, sessions: [], agenda: [], metaHoras: 12, favorites: {}, notes: {}, notebooks: [], deletedNotebooks: [] }; }
 let state = blankState();
 let dirty = false;
 let localProgressOwnerId = null;
@@ -46,14 +46,19 @@ function save() {
   dirty = !!auth;
   if (typeof onSave === 'function') onSave();
 }
-function exportCode() { return JSON.stringify({ app: 'caderno-ss', v: 3, at: Date.now(), data: { attempts: state.attempts, sims: state.sims, read: state.read, sessions: state.sessions, agenda: state.agenda, metaHoras: state.metaHoras } }); }
+function exportCode() { return JSON.stringify({ app: 'caderno-ss', v: 4, at: Date.now(), data: { attempts: state.attempts, sims: state.sims, read: state.read, sessions: state.sessions, agenda: state.agenda, metaHoras: state.metaHoras, favorites: state.favorites, notes: state.notes, notebooks: state.notebooks, deletedNotebooks: state.deletedNotebooks } }); }
 function importCode(txt) {
   const obj = JSON.parse(txt);
   const d = obj && obj.data ? obj.data : obj;
   if (!d || typeof d !== 'object' || !d.attempts) throw new Error('formato');
   const valid = id => !!QMAP[id];
   const attempts = {}; Object.keys(d.attempts).forEach(k => { if (valid(k)) attempts[k] = d.attempts[k]; });
-  state = Object.assign(blankState(), { attempts, sims: (d.sims || []).filter(s => s.qs && s.qs.every(valid)), read: d.read || {},
+  const favorites = Object.fromEntries(Object.entries(d.favorites || {}).filter(([id, value]) => valid(id) && typeof value === 'boolean'));
+  const notes = Object.fromEntries(Object.entries(d.notes || {}).filter(([id, value]) => valid(id) && typeof value === 'string').map(([id, value]) => [id, value.slice(0, 2000)]));
+  const deletedNotebooks = Array.isArray(d.deletedNotebooks) ? [...new Set(d.deletedNotebooks.filter(id => typeof id === 'string'))] : [];
+  const deletedNotebookSet = new Set(deletedNotebooks);
+  const notebooks = Array.isArray(d.notebooks) ? d.notebooks.filter(x => x && typeof x.id === 'string' && typeof x.name === 'string' && Array.isArray(x.qs) && !deletedNotebookSet.has(x.id)).map(x => ({ id: x.id, name: x.name.slice(0, 60), createdAt: Number(x.createdAt) || Date.now(), qs: [...new Set(x.qs.filter(valid))] })).filter(x => x.qs.length) : [];
+  state = Object.assign(blankState(), { attempts, sims: (d.sims || []).filter(s => s.qs && s.qs.every(valid)), read: d.read || {}, favorites, notes, notebooks, deletedNotebooks,
     sessions: Array.isArray(d.sessions) ? d.sessions.filter(x => x && x.start && x.dur > 0) : [],
     agenda: Array.isArray(d.agenda) ? d.agenda.filter(x => x && x.dia >= 0 && x.dia <= 6 && x.hora) : [],
     metaHoras: d.metaHoras >= 1 && d.metaHoras <= 80 ? d.metaHoras : 12 });
@@ -101,6 +106,22 @@ function modal({ title, body, confirm = 'Confirmar', cancel = 'Cancelar', danger
   });
 }
 
+function askText({ title, label, placeholder, maxLength = 60 }) {
+  return new Promise(resolve => {
+    const root = $('#modal-root');
+    root.innerHTML = `<div class="scrim show" style="z-index:90" data-ask="cancel"></div>
+      <form role="dialog" aria-modal="true" aria-labelledby="ask-title" class="dialog">
+        <h3 id="ask-title">${title}</h3>
+        <label class="fg" style="margin:var(--space-4) 0"><span class="field-label">${label}</span><input class="input" name="answer" maxlength="${maxLength}" placeholder="${placeholder}" required></label>
+        <div class="btn-row" style="justify-content:flex-end"><button type="button" class="btn" data-ask="cancel">Cancelar</button><button type="submit" class="btn btn-primary">Salvar</button></div>
+      </form>`;
+    const done = value => { root.innerHTML = ''; resolve(value); };
+    root.querySelectorAll('[data-ask="cancel"]').forEach(el => el.addEventListener('click', () => done(null)));
+    root.querySelector('form').addEventListener('submit', event => { event.preventDefault(); done(root.querySelector('[name="answer"]').value.trim()); });
+    root.querySelector('[name="answer"]').focus();
+  });
+}
+
 /* ================= Estatísticas ================= */
 function statsFor(filterFn) {
   let n = 0, ok = 0, seen = 0, total = 0;
@@ -133,6 +154,8 @@ function renderNav(route) {
     ${link('#/simulado', 'Simulador de prova', r0 === 'simulado', exam && !exam.finished ? '<span class="nav-tag">em andamento</span>' : '')}
     ${link('#/desempenho', 'Desempenho', r0 === 'desempenho')}
     ${link('#/erros', 'Caderno de erros', r0 === 'erros', errCount() ? `<span class="nav-prog">${errCount()}</span>` : '')}
+    ${link('#/favoritas', 'Questões favoritas', r0 === 'favoritas', Object.values(state.favorites).filter(Boolean).length ? `<span class="nav-prog">${Object.values(state.favorites).filter(Boolean).length}</span>` : '')}
+    ${link('#/cadernos', 'Meus cadernos', r0 === 'cadernos', state.notebooks.length ? `<span class="nav-prog">${state.notebooks.length}</span>` : '')}
     <div class="nav-label">Organização</div>
     ${link('#/estudo', 'Tempo de estudo', r0 === 'estudo', sw ? `<span class="nav-tag tnum" id="nav-sw-time">${fmtTime(sw.acc)}</span>` : '')}
     ${link('#/cronograma', 'Meu cronograma', r0 === 'cronograma', state.agenda.length ? `<span class="nav-prog">${state.agenda.filter(x => x.done).length}/${state.agenda.length}</span>` : '')}
@@ -158,6 +181,8 @@ function router() {
   else if (r[0] === 'simulado') c.innerHTML = viewConfig();
   else if (r[0] === 'desempenho') c.innerHTML = viewStats();
   else if (r[0] === 'erros') c.innerHTML = viewErrors();
+  else if (r[0] === 'favoritas') c.innerHTML = viewFavorites();
+  else if (r[0] === 'cadernos') c.innerHTML = viewNotebooks();
   else if (r[0] === 'estudo') c.innerHTML = viewStudy();
   else if (r[0] === 'cronograma') c.innerHTML = viewAgenda();
   else c.innerHTML = viewHome();
@@ -560,8 +585,12 @@ function qCard(q, num) {
   let opts;
   if (answered && !reveal) opts = optionsHTML(q, chosen, false, 'noop').replace(/<button class="opt /g, '<button disabled class="opt ');
   else opts = optionsHTML(q, chosen, reveal, 'bank-answer');
+  const note = state.notes[q.id] || '';
+  const noteOpen = !!openNotes[q.id];
   return `<article class="q-card ${answered && !reveal ? 'is-answered' : ''}" id="q-${q.id}">
     ${qMeta(q, num)}
+    <div class="q-tools"><button class="btn btn-sm ${state.favorites[q.id] ? 'is-favorite' : ''}" data-action="toggle-favorite" data-q="${q.id}" aria-pressed="${!!state.favorites[q.id]}"><i data-lucide="star"></i>${state.favorites[q.id] ? 'Favorita' : 'Favoritar'}</button><button class="btn btn-sm" data-action="toggle-note" data-q="${q.id}" aria-expanded="${noteOpen}"><i data-lucide="notebook-pen"></i>${note ? 'Editar nota' : 'Anotar'}</button>${note ? '<span class="tag primary">Com anotação</span>' : ''}</div>
+    ${noteOpen ? `<label class="q-note"><span class="field-label">Minha anotação</span><textarea class="input" data-note-q="${q.id}" maxlength="2000" rows="3" placeholder="Registre uma dúvida ou um ponto para revisar...">${esc(note)}</textarea></label>` : ''}
     ${stemHTML(q)}
     ${opts}
     ${answered && !reveal ? `<div class="q-answered"><span class="small"><b>Resposta registrada: ${LETTERS[chosen]}.</b> <span class="muted">O gabarito fica oculto até você pedir.</span></span><button class="btn btn-sm" data-action="bank-reveal" data-q="${q.id}">Ver resposta e comentário</button></div>` : ''}
@@ -571,11 +600,13 @@ function qCard(q, num) {
 
 
 /* ===== Resolver questões (prática livre, separada do simulado) ===== */
-const QZ_BLANK = () => ({ t: 'all', a: 'all', dif: 'all', status: 'all', fmt: 'all', busca: '' });
+const QZ_BLANK = () => ({ t: 'all', a: 'all', dif: 'all', status: 'all', fmt: 'all', favoritas: false, busca: '' });
 let qz = QZ_BLANK();
 let qzOpt = { modo: 'lista', ordem: 'edital' };
-let qzIdx = 0, qzPage = 0, qzRand = {}, qzOpen = false;
-const qzActive = () => ['t', 'a', 'dif', 'status', 'fmt'].filter(k => qz[k] !== 'all').length + (qz.busca.trim() ? 1 : 0);
+let qzIdx = 0, qzPage = 0, qzRand = {}, qzOpen = false, qzNotebookId = null;
+let openNotes = {};
+let noteSaveTimer = null;
+const qzActive = () => ['t', 'a', 'dif', 'status', 'fmt'].filter(k => qz[k] !== 'all').length + (qz.busca.trim() ? 1 : 0) + (qz.favoritas ? 1 : 0);
 const QZ_STEP = 20;
 let qzShown = QZ_STEP;
 const TORDER = Object.fromEntries(TOPICS.map((t, i) => [t.id, i]));
@@ -584,7 +615,11 @@ const FMT_LABEL = { af: 'Análise de afirmativas', inc: 'Incorreta / exceto', di
 const norm = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function qzList() {
   const b = norm(qz.busca.trim());
+  const notebook = state.notebooks.find(x => x.id === qzNotebookId);
+  const notebookIds = notebook ? new Set(notebook.qs) : null;
   const list = QS.filter(q => {
+    if (notebookIds && !notebookIds.has(q.id)) return false;
+    if (qz.favoritas && !state.favorites[q.id]) return false;
     if (qz.t !== 'all' && q.t !== qz.t) return false;
     if (qz.a !== 'all' && q.a !== qz.a) return false;
     if (qz.dif !== 'all' && String(q.dif) !== qz.dif) return false;
@@ -607,11 +642,13 @@ function viewPractice() {
   const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
   const tSel = qz.t !== 'all' ? TMAP[qz.t] : null;
   const counts = { af: 0, inc: 0, dir: 0 }; QS.forEach(q => counts[qFormat(q)]++);
+  const activeNotebook = state.notebooks.find(x => x.id === qzNotebookId);
   return `
   <div class="page-head">
     <div class="crumb">Prática</div>
     <h1 class="page-title">Resolver questões</h1>
-    <p class="page-lead">Banco completo com ${QS.length} questões comentadas de todos os tópicos do edital. Responda no seu ritmo, sem cronômetro. Ao marcar uma alternativa, a questão fica registrada como respondida e o gabarito só aparece quando você pedir.</p>
+    <p class="page-lead">Banco de questões comentadas do edital. Filtre por tópico, assunto, dificuldade, situação ou palavra-chave; salve seleções em cadernos para revisar depois.</p>
+    ${activeNotebook ? `<div class="note"><b>Caderno: ${esc(activeNotebook.name)}</b> · ${activeNotebook.qs.length} questões <button class="btn btn-sm" data-action="qz-exit-notebook">Sair do caderno</button></div>` : ''}
   </div>
   <section class="panel qz-filters ${qzOpen ? 'open' : ''}">
     <div class="panel-body">
@@ -623,6 +660,7 @@ function viewPractice() {
         <div class="fg"><label for="qz-status">Situação</label><select class="select" id="qz-status" data-qz="status">${opt('all', 'Todas', qz.status)}${opt('new', 'Não resolvidas', qz.status)}${opt('wrong', 'Errei na última', qz.status)}${opt('right', 'Acertei na última', qz.status)}</select></div>
         <div class="fg"><label for="qz-fmt">Formato</label><select class="select" id="qz-fmt" data-qz="fmt">${opt('all', 'Todos', qz.fmt)}${opt('dir', 'Direta (' + counts.dir + ')', qz.fmt)}${opt('af', 'Afirmativas I a IV (' + counts.af + ')', qz.fmt)}${opt('inc', 'Incorreta / exceto (' + counts.inc + ')', qz.fmt)}</select></div>
         <div class="fg qz-search"><label for="qz-busca">Buscar no enunciado</label><input class="input" id="qz-busca" type="search" placeholder="Ex.: Conselho Tutelar, BPC, sigilo" value="${esc(qz.busca)}" autocomplete="off"></div>
+        <label class="check qz-favorite-filter"><input type="checkbox" id="qz-favoritas" data-qz="favoritas" ${qz.favoritas ? 'checked' : ''}><span>Somente favoritas</span></label>
       </div>
       <div class="qz-bar">
         <div class="seg" role="group" aria-label="Modo de exibição">
@@ -634,6 +672,7 @@ function viewPractice() {
           <button class="${qzOpt.ordem === 'aleatoria' ? 'on' : ''}" data-action="qz-ordem" data-v="aleatoria" aria-pressed="${qzOpt.ordem === 'aleatoria'}">Embaralhar</button>
         </div>
         <button class="btn btn-sm btn-ghost" data-action="qz-clear">Limpar filtros</button>
+        <button class="btn btn-sm" data-action="save-notebook">Salvar seleção como caderno</button>
       </div>
     </div>
   </section>
@@ -647,7 +686,7 @@ function qzSumHTML(list) {
   const sess = list.filter(q => bankAnswers[q.id] !== undefined);
   const pend = sess.filter(q => !bankReveal[q.id]).length;
   return `<div class="bank-sum" id="qz-sum">
-    <div><span class="xs muted">No filtro</span> <b class="tnum">${list.length}</b><span class="xs muted"> ${list.length === 1 ? 'questão' : 'questões'}</span></div>
+    <div><span class="xs muted">${qzNotebookId ? 'No caderno' : 'No filtro'}</span> <b class="tnum">${list.length}</b><span class="xs muted"> ${list.length === 1 ? 'questão' : 'questões'}</span></div>
     <div><span class="xs muted">Respondidas agora</span> <b class="tnum">${sess.length}</b></div>
     <div class="hide-sm"><span class="xs muted">Aproveitamento corrigido</span> <b class="tnum">${st.n ? st.p + '%' : '—'}</b></div>
     <div class="bank-bar"><div class="bar ${st.n ? lvl(st.p) : ''}"><span style="width:${pct(st.seen, list.length)}%"></span></div></div>
@@ -1048,8 +1087,10 @@ function viewResult(id) {
 }
 
 /* ================= Desempenho ================= */
+function weakTopicIds() { return TOPICS.map(t => ({ t, s: topicStats(t.id) })).filter(x => x.s.n >= 3 && x.s.p < 70).sort((a, b) => a.s.p - b.s.p || b.s.n - a.s.n).map(x => x.t.id); }
 function viewStats() {
   const all = statsFor(() => true);
+  const weakIds = weakTopicIds();
   const sims = state.sims;
   const best = sims.length ? Math.max(...sims.map(s => s.score)) : null;
   const avgTime = sims.length ? sims.reduce((a, s) => a + s.used / s.n, 0) / sims.length : null;
@@ -1073,6 +1114,7 @@ function viewStats() {
       ${all.n ? `<div class="chart-wrap"><canvas id="topic-chart" aria-label="Gráfico de acerto por tópico"></canvas></div>` : `<div class="empty"><h3>Sem respostas</h3><p>Resolva questões no banco ou em simulados.</p></div>`}
     </div></section>
   </div>
+  ${weakIds.length ? `<section class="panel weak-review" style="margin-bottom:var(--space-5)"><div class="panel-head"><h2>Revisão recomendada</h2><span class="tag warn">${weakIds.length} ${weakIds.length === 1 ? 'tópico' : 'tópicos'} prioritários</span></div><div class="panel-body"><p class="small muted">Com base nas questões respondidas, estes tópicos estão abaixo de 70%. O treino seleciona erros recentes e questões ainda não resolvidas.</p><div class="btn-row"><button class="btn btn-primary" data-action="weak-review">Treinar pontos fracos</button>${weakIds.slice(0, 3).map(id => `<a class="tag" href="#/topico/${id}/desempenho">${esc(TMAP[id].abbr)}</a>`).join('')}</div></div></section>` : ''}
   <section class="panel" style="margin-bottom:var(--space-5)"><div class="panel-head"><h2>Por tópico e assunto</h2></div>${assuntoTable(TOPICS, true)}</section>
   <section class="panel" style="margin-bottom:var(--space-5)">
     <div class="panel-head"><h2>Cópia do progresso</h2></div>
@@ -1130,6 +1172,16 @@ function viewErrors() {
   ${byTopic.map(({ t, qs }) => `<h2 class="h2" style="margin-top:var(--space-6)">${t.num} · ${esc(t.title)} <span class="tag bad">${qs.length}</span></h2>
     <div class="q-list">${qs.map(q => qCard(q)).join('')}</div>`).join('')}`
   : `<div class="panel empty"><h3>Nenhuma questão no caderno</h3><p>As questões que você errar no banco ou nos simulados aparecem aqui.</p><a class="btn btn-primary" href="#/simulado">Ir para o simulador</a></div>`}`;
+}
+
+function viewFavorites() {
+  const list = QS.filter(q => state.favorites[q.id]);
+  return `<div class="page-head"><div class="crumb">Prática</div><h1 class="page-title">Questões favoritas</h1><p class="page-lead">Questões que você marcou para encontrar e revisar depois.</p></div>
+    ${list.length ? `<div class="q-list">${list.map((q, i) => qCard(q, i + 1)).join('')}</div>` : `<div class="panel empty"><h3>Nenhuma questão favorita</h3><p>Use “Favoritar” em uma questão para salvá-la aqui.</p><a class="btn btn-primary" href="#/questoes">Explorar questões</a></div>`}`;
+}
+function viewNotebooks() {
+  return `<div class="page-head"><div class="crumb">Prática</div><h1 class="page-title">Meus cadernos</h1><p class="page-lead">Guarde seleções de questões com os filtros atuais e continue a revisão quando quiser.</p></div>
+    ${state.notebooks.length ? `<div class="notebook-grid">${state.notebooks.slice().sort((a,b) => b.createdAt-a.createdAt).map(n => `<article class="panel notebook-card"><div class="panel-head"><h2>${esc(n.name)}</h2><span class="tag">${n.qs.length} questões</span></div><div class="panel-body"><p class="small muted">Criado em ${new Date(n.createdAt).toLocaleDateString('pt-BR')}</p><div class="btn-row"><button class="btn btn-sm btn-primary" data-action="open-notebook" data-id="${esc(n.id)}">Estudar caderno</button><button class="btn btn-sm btn-ghost btn-danger" data-action="delete-notebook" data-id="${esc(n.id)}">Excluir</button></div></div></article>`).join('')}</div>` : `<div class="panel empty"><h3>Seus cadernos aparecerão aqui</h3><p>Na tela de questões, aplique filtros e escolha “Salvar seleção como caderno”.</p><a class="btn btn-primary" href="#/questoes">Encontrar questões</a></div>`}`;
 }
 
 /* ================= Eventos ================= */
@@ -1437,6 +1489,7 @@ document.addEventListener('click', async ev => {
 });
 document.addEventListener('change', ev => {
   const id = ev.target.id;
+  if (ev.target.dataset.noteQ) { clearTimeout(noteSaveTimer); noteSaveTimer = null; state.notes[ev.target.dataset.noteQ] = ev.target.value.trim().slice(0, 2000); save(); toast(state.notes[ev.target.dataset.noteQ] ? 'Anotação salva.' : 'Anotação removida.'); return; }
   if (ev.target.dataset.agDone) { const it = state.agenda.find(x => x.id === ev.target.dataset.agDone); if (it) { it.done = ev.target.checked; save(); rerenderKeepScroll(); } return; }
   if (id === 'sw-t' || id === 'ag-t' || id === 'man-t') {
     const a = document.getElementById(id.replace('-t', '-a')); a.innerHTML = assuntoOptions(ev.target.value, ''); a.disabled = !ev.target.value;
@@ -1496,6 +1549,13 @@ document.addEventListener('click', async ev => {
     case 'qz-reveal-all': { const list = qzList(); let k = 0; list.forEach(q => { if (bankAnswers[q.id] !== undefined && !bankReveal[q.id]) { bankReveal[q.id] = true; k++; } }); persistLocalProgress(); qzRefresh(); renderNav(parseRoute()); toast(k + (k === 1 ? ' questão corrigida.' : ' questões corrigidas.')); break; }
     case 'qz-more': { qzShown += QZ_STEP; const y = window.scrollY; qzRefresh(); window.scrollTo(0, y); break;
     }
+    case 'toggle-favorite': { const qid = el.dataset.q; state.favorites[qid] = !state.favorites[qid]; save(); rerenderKeepScroll(); toast(state.favorites[qid] ? 'Questão adicionada às favoritas.' : 'Questão removida das favoritas.'); break; }
+    case 'toggle-note': { const qid = el.dataset.q; openNotes[qid] = !openNotes[qid]; rerenderKeepScroll(); const field = document.querySelector(`[data-note-q="${qid}"]`); if (openNotes[qid] && field) field.focus(); break; }
+    case 'save-notebook': { const list = qzList(); if (!list.length) { toast('Não há questões para salvar.'); break; } const name = await askText({ title: 'Salvar seleção como caderno', label: 'Nome do caderno', placeholder: 'Ex.: Legislação que preciso revisar' }); if (!name) break; state.notebooks.push({ id: uid(), name: name.slice(0, 60), createdAt: Date.now(), qs: list.map(q => q.id) }); save(); rerenderKeepScroll(); toast('Caderno salvo.'); break; }
+    case 'open-notebook': { qzNotebookId = el.dataset.id; qz = QZ_BLANK(); qzOpt.ordem = 'edital'; qzShuffle(); qzResetPos(); location.hash = '#/questoes'; break; }
+    case 'qz-exit-notebook': { qzNotebookId = null; qzResetPos(); rerenderKeepScroll(); break; }
+    case 'delete-notebook': { const n = state.notebooks.find(x => x.id === el.dataset.id); if (!n) break; const ok = await modal({ title: 'Excluir caderno?', body: `O caderno “${esc(n.name)}” será removido. As questões e o progresso não serão apagados.`, confirm: 'Excluir', danger: true }); if (ok) { state.notebooks = state.notebooks.filter(x => x.id !== n.id); state.deletedNotebooks.push(n.id); save(); rerenderKeepScroll(); toast('Caderno excluído.'); } break; }
+    case 'weak-review': { if (exam && !exam.finished) { const ok = await modal({ title: 'Substituir simulado em andamento?', body: 'O simulado atual será descartado sem registrar resultado.', confirm: 'Iniciar revisão' }); if (!ok) break; } const weak = weakTopicIds(); const candidates = QS.filter(q => weak.includes(q.t)); const prioritized = candidates.filter(q => { const a = state.attempts[q.id]; return !a || a.last === false; }); const pool = prioritized.length ? prioritized : candidates; if (!pool.length) { toast('Ainda não há dados suficientes para sugerir uma revisão.'); break; } const ids = shuffle(pool).slice(0, Math.min(10, pool.length)).map(q => q.id); startExam(ids, { tempoAuto: true, mode: 'treino' }); break; }
     case 'bank-retry': { delete bankAnswers[el.dataset.q]; delete bankReveal[el.dataset.q]; delete cuts[el.dataset.q]; persistLocalProgress(); if (parseRoute()[0] === 'questoes' && qzOpt.modo === 'uma') qzRefresh(); else { replaceCard(QMAP[el.dataset.q]); qzSumRefresh(); } break; }
     case 'qz-modo': qzOpt.modo = el.dataset.v; qzResetPos(); rerenderKeepScroll(); break;
     case 'qz-ordem': qzOpt.ordem = el.dataset.v; if (el.dataset.v === 'aleatoria') qzShuffle(); qzResetPos(); rerenderKeepScroll(); if (el.dataset.v === 'aleatoria') toast('Questões embaralhadas.'); break;
@@ -1607,11 +1667,12 @@ document.addEventListener('change', ev => {
   const f = ev.target.dataset.filter;
   if (f) { bankFilter[f] = ev.target.value; rerenderKeepScroll(); return; }
   const z = ev.target.dataset.qz;
-  if (z) { qz[z] = ev.target.value; if (z === 't') qz.a = 'all'; qzResetPos(); rerenderKeepScroll(); return; }
+  if (z) { qz[z] = ev.target.type === 'checkbox' ? ev.target.checked : ev.target.value; if (z === 't') qz.a = 'all'; qzResetPos(); rerenderKeepScroll(); return; }
   if (ev.target.dataset.cfgKey) { cfg.sel[ev.target.dataset.cfgKey] = ev.target.checked; rerenderKeepScroll(); return; }
   if (ev.target.dataset.cfgTopic) { const t = TMAP[ev.target.dataset.cfgTopic]; t.assuntos.forEach(a => cfg.sel[t.id + ':' + a.id] = ev.target.checked); rerenderKeepScroll(); return; }
 });
 document.addEventListener('input', ev => {
+  if (ev.target.dataset.noteQ) { state.notes[ev.target.dataset.noteQ] = ev.target.value.slice(0, 2000); clearTimeout(noteSaveTimer); noteSaveTimer = setTimeout(save, 450); return; }
   if (ev.target.id === 'qz-busca') { qz.busca = ev.target.value; qzResetPos(); clearTimeout(qzRefresh._t); qzRefresh._t = setTimeout(() => qzRefresh(), 180); return; }
   if (ev.target.id === 'cfg-n') { cfg.n = +ev.target.value; $('#cfg-n-val').textContent = cfg.n; updateConfigSummary(); }
   if (ev.target.id === 'cfg-min') { cfg.minutos = +ev.target.value; $('#cfg-min-val').textContent = cfg.minutos; updateConfigSummary(); }
@@ -1669,7 +1730,7 @@ function requireSupabase() {
 }
 
 function progressData() { return JSON.parse(exportCode()).data; }
-function hasLocalProgress() { return Object.keys(state.attempts).length || state.sims.length || Object.keys(state.read).length || state.sessions.length || state.agenda.length; }
+function hasLocalProgress() { return Object.keys(state.attempts).length || state.sims.length || Object.keys(state.read).length || state.sessions.length || state.agenda.length || Object.keys(state.favorites).length || Object.keys(state.notes).length || state.notebooks.length || state.deletedNotebooks.length; }
 
 /* Junta o progresso da conta com o da sessão atual, sem perder nada. */
 function mergeData(a, b, addAttemptCounts = true) {
@@ -1681,12 +1742,18 @@ function mergeData(a, b, addAttemptCounts = true) {
     else attempts[k] = { n: addAttemptCounts ? x.n + v.n : Math.max(x.n, v.n), ok: addAttemptCounts ? x.ok + v.ok : Math.max(x.ok, v.ok), last: (v.ts || 0) >= (x.ts || 0) ? v.last : x.last, ts: Math.max(x.ts || 0, v.ts || 0) };
   });
   const byKey = (arr, key) => { const m = new Map(); arr.forEach(x => x && m.set(key(x), x)); return [...m.values()]; };
+  const deletedNotebooks = [...new Set([...(a.deletedNotebooks || []), ...(b.deletedNotebooks || [])])];
+  const deletedNotebookSet = new Set(deletedNotebooks);
   return {
     attempts,
     sims: byKey([...(a.sims || []), ...(b.sims || [])], x => x.id).sort((x, y) => (x.at || 0) - (y.at || 0)),
     read: Object.assign({}, a.read, b.read),
     sessions: byKey([...(a.sessions || []), ...(b.sessions || [])], x => x.id || x.start).sort((x, y) => x.start - y.start),
     agenda: byKey([...(a.agenda || []), ...(b.agenda || [])], x => x.id || (x.dia + x.hora + x.tipo)),
+    favorites: Object.assign({}, a.favorites || {}, b.favorites || {}),
+    notes: Object.assign({}, a.notes || {}, b.notes || {}),
+    deletedNotebooks,
+    notebooks: byKey([...(a.notebooks || []), ...(b.notebooks || [])], x => x.id).filter(x => !deletedNotebookSet.has(x.id)),
     metaHoras: b.metaHoras || a.metaHoras || 12,
   };
 }
@@ -1720,7 +1787,7 @@ async function afterLogin(session, novo = false) {
   const metadata = user.user_metadata || {};
   const sameLocalAccount = localProgressOwnerId === user.id;
   if (localProgressOwnerId && !sameLocalAccount) {
-    state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null;
+    state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; qzNotebookId = null;
     clearInterval(timerId); dirty = false;
   }
   const local = hasLocalProgress() && (!localProgressOwnerId || sameLocalAccount) ? progressData() : null;
@@ -1943,7 +2010,7 @@ function openAcct() {
   root.querySelector('#acct-out').addEventListener('click', async () => {
     await syncNow();
     try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch (e) {}
-    auth = null; state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; clearInterval(timerId); clearLocalProgress(); dirty = false;
+    auth = null; state = blankState(); bankAnswers = {}; bankReveal = {}; exam = null; qzNotebookId = null; clearInterval(timerId); clearLocalProgress(); dirty = false;
     root.innerHTML = ''; router.first = true; router(); paintAcct(); toast('Você saiu da conta. O progresso continua salvo nela.');
   });
 }
@@ -1956,7 +2023,7 @@ document.addEventListener('click', ev => {
 });
 
 
-window.addEventListener('beforeunload', ev => { if (typeof auth !== 'undefined' && auth) { flushSync(); if (!sw) return; } if (sw || (dirty && (Object.keys(state.attempts).length || state.sims.length || state.sessions.length || state.agenda.length))) { ev.preventDefault(); ev.returnValue = ''; } });
+window.addEventListener('beforeunload', ev => { if (noteSaveTimer) { clearTimeout(noteSaveTimer); noteSaveTimer = null; save(); } if (typeof auth !== 'undefined' && auth) { flushSync(); if (!sw) return; } if (sw || (dirty && (Object.keys(state.attempts).length || state.sims.length || state.sessions.length || state.agenda.length))) { ev.preventDefault(); ev.returnValue = ''; } });
 setInterval(() => { renderMast(); icons(); }, 60000);
 const restoredLocalProgress = restoreLocalProgress();
 setTheme(document.documentElement.getAttribute('data-theme'));

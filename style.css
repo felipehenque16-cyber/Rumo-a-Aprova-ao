@@ -603,3 +603,16 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 .q-answered { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-2); }
 .qz-more { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); margin: var(--space-5) 0 var(--space-2); }
 .bank-sum .btn { margin-left: auto; }
+
+/* Favoritos, anotações e cadernos pessoais */
+.q-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.q-tools .btn { display: inline-flex; align-items: center; gap: 6px; }
+.q-tools .is-favorite { color: var(--color-warning); border-color: var(--color-warning); background: var(--color-warning-soft); }
+.q-tools .is-favorite svg { fill: currentColor; }
+.q-note { display: flex; flex-direction: column; gap: var(--space-2); margin: 0 0 var(--space-4); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.q-note .input { width: 100%; resize: vertical; }
+.qz-favorite-filter { grid-column: 1 / -1; }
+.notebook-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-4); }
+.notebook-card .panel-head { gap: var(--space-3); }
+.notebook-card .panel-head h2 { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-md); }
+.notebook-card .panel-body .small { margin-bottom: var(--space-3); }
