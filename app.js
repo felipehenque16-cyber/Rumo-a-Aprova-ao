@@ -232,16 +232,52 @@ function nextUnread() {
   for (const t of TOPICS) for (const s of t.sections) if (!state.read[t.id + ':' + s.assunto]) return { t, s };
   return null;
 }
+function homeNextAgenda(now = new Date()) {
+  const today = dayIdx(now);
+  const minute = now.getHours() * 60 + now.getMinutes();
+  return state.agenda.filter(x => !x.done && /^\d{2}:\d{2}$/.test(x.hora)).map(x => {
+    const [hour, min] = x.hora.split(':').map(Number);
+    if (hour > 23 || min > 59) return null;
+    let days = (x.dia - today + 7) % 7;
+    if (days === 0 && hour * 60 + min <= minute) days = 7;
+    return { item: x, days };
+  }).filter(Boolean).sort((a, b) => a.days - b.days || a.item.hora.localeCompare(b.item.hora))[0] || null;
+}
+function homeDashboard(nu) {
+  const lastAttempt = Object.entries(state.attempts).filter(([id, a]) => QMAP[id] && Number(a.ts) > 0).sort((a, b) => b[1].ts - a[1].ts)[0];
+  const lastSession = state.sessions.filter(s => s && s.start && s.t && TMAP[s.t]).sort((a, b) => b.start - a.start)[0];
+  const lastQuestion = lastAttempt && QMAP[lastAttempt[0]];
+  const resumeQuestion = lastQuestion && TMAP[lastQuestion.t] && (!lastSession || Number(lastAttempt[1].ts) >= lastSession.start);
+  const resumeTopic = resumeQuestion ? lastQuestion.t : lastSession ? lastSession.t : '';
+  const resumeHref = resumeTopic ? `#/topico/${resumeTopic}/questoes` : nu ? `#/topico/${nu.t.id}/resumo?s=${nu.s.assunto}` : '#/questoes';
+  const resumeTitle = resumeTopic ? TMAP[resumeTopic].title : nu ? nu.s.title : 'Banco de questões';
+  const resumeContext = resumeTopic ? 'Continue pelo tópico que você estudou por último.' : nu ? `Próximo resumo · ${nu.t.title}` : 'Pratique com questões do edital.';
+  const upcoming = homeNextAgenda();
+  const weak = weakTopicIds();
+  const weakTopic = weak[0] && TMAP[weak[0]];
+  const nextLabel = upcoming ? upcoming.days === 0 ? 'Hoje' : upcoming.days === 1 ? 'Amanhã' : DIAS[upcoming.item.dia] : '';
+  const nextTopic = upcoming && upcoming.item.t && TMAP[upcoming.item.t] ? TMAP[upcoming.item.t].title : upcoming ? (TIPOS[upcoming.item.tipo] || 'Estudo geral') : '';
+  return `<section class="home-dashboard" aria-label="Seu painel de estudos">
+    <article class="home-focus-card home-resume">
+      <span class="home-eyebrow">Continuar estudando</span>
+      <h2>${esc(resumeTitle)}</h2><p>${esc(resumeContext)}</p>
+      <a class="btn btn-primary" href="${resumeHref}">Retomar estudos</a>
+      <a class="home-secondary-link" href="#/simulado">Montar um simulado</a>
+    </article>
+    <article class="home-focus-card">
+      <span class="home-eyebrow">Próxima atividade</span>
+      ${upcoming ? `<h2>${nextLabel} · ${upcoming.item.hora}</h2><p>${esc(nextTopic)}${upcoming.item.obs ? ` · ${esc(upcoming.item.obs)}` : ''}</p><button class="btn btn-sm" data-action="ag-go" data-id="${esc(upcoming.item.id)}">Iniciar atividade</button>` : `<h2>Organize sua rotina</h2><p>Seu cronograma pode indicar o próximo passo do estudo.</p><a class="btn btn-sm" href="#/cronograma">Montar cronograma</a>`}
+    </article>
+    <article class="home-focus-card home-review-card">
+      <span class="home-eyebrow">Para revisar</span>
+      ${weakTopic ? `<h2>${esc(weakTopic.title)}</h2><p>Este tópico merece mais atenção pelas respostas recentes.</p><button class="btn btn-sm" data-action="weak-review">Treinar este ponto</button>` : errCount() ? `<h2>Questões erradas</h2><p>Retome os erros para consolidar o conteúdo.</p><a class="btn btn-sm" href="#/erros">Abrir caderno de erros</a>` : `<h2>Seu ritmo está em dia</h2><p>${Object.keys(state.attempts).length ? 'Continue praticando para encontrar novos pontos de revisão.' : 'Ao responder questões, indicaremos o que vale revisar.'}</p><a class="btn btn-sm" href="#/questoes">Resolver questões</a>`}
+    </article>
+  </section>`;
+}
 function viewHome() {
-  const all = statsFor(() => true);
   const sims = state.sims;
-  const best = sims.length ? Math.max(...sims.map(s => s.score)) : null;
-  const totalSections = TOPICS.reduce((s, t) => s + t.sections.length, 0);
-  const totalRead = Object.keys(state.read).length;
   const nu = nextUnread();
   const plan = studyPlan();
-  const weak = weakest(4);
-  const d = daysLeft();
   return `
   <div class="page-head">
     <div class="crumb">Edital nº 01/2026 · Prefeitura Municipal de Campina Grande/PB · IDECAN</div>
@@ -250,12 +286,7 @@ function viewHome() {
   </div>
 
   ${typeof auth !== 'undefined' && auth ? '' : `<div class="acct-banner"><div><b>Guarde seu progresso</b><span class="small muted">Com uma conta, suas respostas, simulados, cronograma e tempo de estudo ficam salvos e podem ser retomados em qualquer aparelho.</span></div><div class="btn-row"><button class="btn btn-primary btn-sm" data-action="open-login" data-mode="cadastro">Criar conta</button><button class="btn btn-sm" data-action="open-login">Entrar</button></div></div>`}
-  <div class="strip">
-    <div><div class="strip-label">Estudo nesta semana</div><div class="strip-value">${hm(studiedSince(weekStart()))}</div><div class="strip-sub">meta de ${state.metaHoras} h · ${d > 0 ? d : 0} dias até a prova</div></div>
-    <div><div class="strip-label">Resumos lidos</div><div class="strip-value">${totalRead}<small> / ${totalSections}</small></div><div class="strip-sub">${pct(totalRead, totalSections)}% do conteúdo</div></div>
-    <div><div class="strip-label">Questões resolvidas</div><div class="strip-value">${all.seen}</div><div class="strip-sub">${all.n ? all.p + '% de acerto' : 'nenhuma ainda'} · <a href="#/questoes">resolver</a></div></div>
-    <div><div class="strip-label">Simulados</div><div class="strip-value">${sims.length}</div><div class="strip-sub">${best !== null ? 'melhor: ' + best + '%' : 'nenhum realizado'}</div></div>
-  </div>
+  ${homeDashboard(nu)}
 
   <div class="cols">
     <div class="stack">
@@ -284,18 +315,6 @@ function viewHome() {
     <div class="stack">
       ${homeOrgPanel()}
       <section class="panel">
-        <div class="panel-head"><h2>Próximo passo</h2></div>
-        <div class="panel-body">
-          ${nu ? `<p class="small" style="margin-bottom:var(--space-3)">Próximo resumo não lido:<br><a href="#/topico/${nu.t.id}/resumo?s=${nu.s.assunto}"><b>${esc(nu.s.title)}</b></a><br><span class="xs muted">Tópico ${nu.t.num} · ${esc(nu.t.title)}</span></p>` : '<p class="small">Todos os resumos foram lidos. Concentre-se em simulados e no caderno de erros.</p>'}
-          <div class="btn-row">
-            <button class="btn btn-primary" data-action="preset-sim" data-p="prova">Simulado no formato da prova</button>
-            <a class="btn" href="#/questoes">Resolver questões</a>
-          </div>
-          <p class="xs muted" style="margin:var(--space-3) 0 0">20 questões de conhecimentos específicos, 90 minutos — mesmo ritmo da prova (3 h para 40 questões).</p>
-        </div>
-      </section>
-
-      <section class="panel">
         <div class="panel-head"><h2>Ficha do concurso</h2><a class="xs" href="#/edital">Edital completo</a></div>
         <table class="tbl"><tbody>
           ${ED.ficha.filter(f => ['Cargo', 'Banca', 'Remuneração', 'Jornada', 'Vagas', 'Prova objetiva'].includes(f[0])).map(f => `<tr><td class="k">${f[0]}</td><td>${esc(f[1])}</td></tr>`).join('')}
@@ -309,12 +328,6 @@ function viewHome() {
           <tbody>${ED.composicao.map(c => `<tr><td>${c[1]}${c[5] ? '' : ' <span class="xs faint">(fora do escopo)</span>'}</td><td class="num">${c[2]}</td><td class="num">${c[4]}</td></tr>`).join('')}</tbody>
           <tfoot><tr><td>Total</td><td class="num">40</td><td class="num">60,00</td></tr></tfoot>
         </table>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head"><h2>Assuntos a reforçar</h2></div>
-        ${weak.length ? `<table class="tbl"><tbody>${weak.map(w => `<tr><td><a class="row-link" href="#/topico/${w.t}/questoes?a=${w.a}">${esc(w.name)}</a><div class="xs muted">${TMAP[w.t].num} · ${esc(TMAP[w.t].title)}</div></td><td class="num mid"><span class="pct ${lvl(w.p)}">${w.p}%</span></td></tr>`).join('')}</tbody></table>`
-          : '<div class="empty-inline">Os assuntos com menor aproveitamento aparecem aqui depois que você resolver questões.</div>'}
       </section>
 
       <section class="panel">

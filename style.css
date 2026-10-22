@@ -150,6 +150,20 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 2; flex-shrink: 0; }
 .strip-value small { font-size: var(--text-sm); color: var(--color-text-faint); }
 .strip-sub { font-size: var(--text-xs); color: var(--color-text-faint); }
 
+/* ---------- Personal home dashboard ---------- */
+.home-dashboard { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-5); }
+.home-focus-card { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; min-height: 190px; padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); }
+.home-resume { color: var(--color-on-primary); background: var(--color-primary); border-color: var(--color-primary); }
+.home-eyebrow { margin-bottom: var(--space-3); color: var(--color-text-muted); font-size: var(--text-xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.home-resume .home-eyebrow { color: inherit; opacity: .78; }
+.home-focus-card h2 { margin: 0 0 var(--space-2); font-size: var(--text-md); font-weight: 600; line-height: 1.35; }
+.home-focus-card p { flex: 1; margin: 0 0 var(--space-4); color: var(--color-text-muted); font-size: var(--text-sm); line-height: 1.5; }
+.home-resume p { color: inherit; opacity: .86; }
+.home-focus-card .btn { margin-top: auto; }
+.home-resume .btn-primary { color: var(--color-primary); background: var(--color-on-primary); border-color: var(--color-on-primary); }
+.home-resume .home-secondary-link { margin-top: var(--space-3); color: inherit; font-size: var(--text-xs); opacity: .82; }
+.home-review-card { background: var(--color-surface-2); }
+
 /* ---------- Tables ---------- */
 .table-wrap { overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
@@ -579,6 +593,8 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 .auth-gate-main [data-guest-entry] { margin-right: auto; color: var(--color-text-muted); padding-inline: 8px; }
 .auth-gate-mobile-mark { display: none; }
 @media (max-width: 700px) {
+  .home-dashboard { grid-template-columns: minmax(0,1fr); gap: var(--space-3); }
+  .home-focus-card { min-height: 0; }
   #modal-root.auth-gate { padding: 12px; }
   #modal-root.auth-gate .dialog.auth-gate-card { max-height: calc(100dvh - 24px); grid-template-columns: minmax(0,1fr); overflow-y: auto; border-radius: 16px; }
   .auth-gate-hero { min-height: 0; padding: 19px 24px; flex-direction: row; align-items: center; gap: 16px; }
