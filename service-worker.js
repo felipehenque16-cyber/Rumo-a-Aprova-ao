@@ -1,8 +1,9 @@
-const CACHE_NAME = 'caderno-ss-shell-v11';
+const CACHE_NAME = 'caderno-ss-shell-v12';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './aprovai-logo.svg',
   './style.css',
   './app.js',
   './supabase-config.js',
