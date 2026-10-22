@@ -84,7 +84,8 @@ svg.lucide { width: 16px; height: 16px; stroke-width: 2; flex-shrink: 0; }
 /* ---------- Masthead ---------- */
 .masthead { position: sticky; top: 0; z-index: 60; height: var(--mast-h); display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-5); background: var(--color-mast); color: var(--color-mast-text); border-bottom: 1px solid rgba(0,0,0,.2); }
 .mh-brand { display: flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-width: 0; }
-.mh-logo { width: 30px; height: 30px; border: 1.5px solid currentColor; border-radius: var(--radius-sm); display: grid; place-items: center; font-weight: 700; font-size: 12px; letter-spacing: .02em; flex-shrink: 0; }
+.mh-logo { width: 34px; height: 34px; border: 0; border-radius: 10px; display: block; overflow: hidden; flex-shrink: 0; }
+.mh-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .mh-title { font-weight: 600; font-size: var(--text-base); line-height: 1.15; white-space: nowrap; }
 .mh-sub { display: block; font-weight: 400; font-size: var(--text-xs); color: var(--color-mast-muted); }
 .mh-exam { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-sm); color: var(--color-mast-muted); white-space: nowrap; }
@@ -531,7 +532,8 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 .mh-login svg { width: 16px; height: 16px; }
 .mh-user { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 4px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--color-mast-text); font-size: 13px; font-weight: 600; }
 .mh-user:hover { border-color: rgba(255,255,255,.3); }
-.mh-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.16); color: inherit; font-size: 11px; font-weight: 700; letter-spacing: .03em; flex-shrink: 0; }
+.mh-avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: rgba(255,255,255,.16); color: inherit; font-size: 11px; font-weight: 700; letter-spacing: .03em; flex-shrink: 0; }
+.mh-avatar img { display: block; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .mh-avatar.lg { width: 44px; height: 44px; font-size: 15px; background: var(--color-primary); color: var(--color-on-primary); }
 .mh-dot { width: 7px; height: 7px; border-radius: 50%; background: #5fd08a; }
 .mh-dot.busy { background: #f0c25a; }
@@ -558,7 +560,8 @@ table.ref th { background: var(--color-surface-2); font-weight: 600; font-size: 
 #modal-root.auth-gate .dialog.auth-gate-card { position: relative; left: auto; top: auto; transform: none; z-index: 1; width: min(960px, 100%); max-height: calc(100dvh - 56px); padding: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); border: 1px solid rgba(31,58,95,.12); border-radius: 22px; box-shadow: 0 24px 80px rgba(19,36,59,.2); }
 .auth-gate-hero { min-height: 610px; padding: clamp(30px, 5vw, 58px); color: #fff; background: linear-gradient(145deg, #142c49, #1f3a5f 58%, #315b83); display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
 .auth-gate-hero::after { content: ''; position: absolute; width: 340px; height: 340px; right: -180px; bottom: -135px; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 36px rgba(255,255,255,.035), 0 0 0 74px rgba(255,255,255,.025); pointer-events: none; }
-.auth-gate-mark { display: grid; place-items: center; width: 52px; height: 52px; border: 1px solid rgba(255,255,255,.42); border-radius: 15px; font-family: var(--font-serif); font-size: 1.1rem; font-weight: 600; letter-spacing: .04em; }
+.auth-gate-mark { display: block; width: 52px; height: 52px; border-radius: 15px; overflow: hidden; flex-shrink: 0; }
+.auth-gate-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .auth-gate-hero > div { max-width: 340px; position: relative; z-index: 1; }
 .auth-gate-kicker, .auth-gate-foot { color: #c2d1e2; font-size: .68rem; font-weight: 700; letter-spacing: .12em; }
 .auth-gate-hero h2 { margin-top: 15px; font-family: var(--font-serif); font-size: clamp(2rem, 4vw, 2.8rem); font-weight: 500; line-height: 1.1; }
